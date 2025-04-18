@@ -1,10 +1,10 @@
-// Versão 1.0.6 - Diagnóstico de token + melhorias
+// Versão 1.0.7 - Corrige envio para Z-API com Client-Token no header
 
 const express = require('express');
 const axios = require('axios');
 const app = express();
 
-app.use(express.json()); // Habilita leitura de JSON
+app.use(express.json()); // Habilita leitura do body em JSON
 
 app.post('/webhook', async (req, res) => {
   try {
@@ -13,31 +13,33 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`✅ Mensagem recebida de: ${numero} | Conteúdo: ${msg}`);
 
-    // Captura variáveis de ambiente
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
 
-    // 🔍 Diagnóstico para garantir que os valores estão sendo lidos
-    console.log(`🔍 Verificando variáveis de ambiente:`);
+    console.log("🔍 Verificando variáveis de ambiente:");
     console.log(`- ID: ${instanceId}`);
     console.log(`- TOKEN: ${token}`);
 
     if (!instanceId || !token) {
-      console.error('❌ Erro: Variáveis de ambiente ZAPI_INSTANCE_ID ou ZAPI_TOKEN não definidas.');
+      console.error('❌ Erro: Variáveis de ambiente não definidas.');
       return res.sendStatus(500);
     }
 
-    // Monta a resposta
     const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-    // Monta o endpoint da Z-API
-    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+    const url = `https://api.z-api.io/instances/${instanceId}/send-text`;
 
-    // Envia a resposta
-    await axios.post(url, {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Client-Token': token,
+    };
+
+    const payload = {
       phone: numero,
       message: resposta,
-    });
+    };
+
+    await axios.post(url, payload, { headers });
 
     console.log(`✅ Resposta enviada com sucesso para ${numero}`);
     res.sendStatus(200);
