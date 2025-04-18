@@ -1,7 +1,7 @@
 {
   "name": "bot-vendedor",
   "version": "1.0.0",
-  "description": "Bot vendedor integrado com Z-API e OpenAI",
+  "description": "",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

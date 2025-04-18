@@ -6,34 +6,36 @@ const app = express();
 app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
-  const msg = req.body.body?.message?.text || '';
-  const numero = req.body.body?.key?.remoteJid || '';
+  const msg = req.body.message?.text?.body || '';
+  const numero = req.body.message?.from || '';
 
-  console.log("📩 Mensagem recebida de", numero + ":", msg);
+  console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", msg);
 
-  // Log das variáveis
   const instanceId = process.env.ZAPI_INSTANCE_ID;
   const token = process.env.ZAPI_TOKEN;
-  console.log("🧩 INSTÂNCIA:", instanceId);
-  console.log("🧩 TOKEN:", token);
+
+  console.log("🔁 INSTÂNCIA:", instanceId);
+  console.log("🔐 TOKEN:", token);
 
   const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-messages`;
+  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+
   try {
-    await axios.post(url, {
-      phone: numero.split('@')[0],
+    const payload = {
+      phone: numero,
       message: resposta
-    });
-    console.log("✅ Mensagem enviada com sucesso!");
-  } catch (err) {
-    console.error("❌ Erro ao enviar mensagem via Z-API:", err.response?.data || err.message);
+    };
+
+    const zapi = await axios.post(url, payload);
+    console.log("✅ Mensagem enviada com sucesso:", zapi.data);
+  } catch (error) {
+    console.error("❌ Erro ao enviar mensagem via Z-API:", error.response?.data || error.message);
   }
 
   res.sendStatus(200);
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
+app.listen(10000, () => {
+  console.log("🚀 Bot vendedor rodando na porta 10000");
 });
