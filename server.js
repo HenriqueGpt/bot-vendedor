@@ -1,4 +1,3 @@
-require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const app = express();
@@ -14,12 +13,13 @@ app.post('/webhook', async (req, res) => {
 
   console.log("📩 Mensagem recebida de", numero + ":", msg);
 
-  // Resposta do bot
-  const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
-
-  // Enviar resposta via Z-API
+  // Log das variáveis de ambiente
   const instanceId = process.env.ZAPI_INSTANCE_ID;
   const token = process.env.ZAPI_TOKEN;
+  console.log("🔍 ID:", instanceId);
+  console.log("🔍 TOKEN:", token);
+
+  const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
   const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
