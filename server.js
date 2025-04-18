@@ -1,4 +1,4 @@
-// Versão: 1.0.6
+// Versão: 1.0.8
 
 const express = require('express');
 const axios = require('axios');
@@ -7,22 +7,32 @@ app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
-    const numero = req.body.phone;
-    const mensagem = req.body?.text?.message;
+    // Garante número correto
+    const numero =
+      req.body.phone ||
+      req.body.key?.remoteJid?.replace('@s.whatsapp.net', '') ||
+      null;
 
-    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
+    const mensagem =
+      req.body?.text?.message ||
+      req.body?.message?.body ||
+      null;
 
-    // Verifica se a mensagem é válida
-    if (!mensagem || mensagem.trim() === '') {
-      console.log("❌ Mensagem vazia ou inválida.");
+    if (!numero) {
+      console.log("❌ Erro: número ausente ou inválido.");
       return res.sendStatus(200);
     }
 
-    // Carrega variáveis de ambiente
+    if (!mensagem || mensagem.trim() === '') {
+      console.log("❌ Mensagem vazia.");
+      return res.sendStatus(200);
+    }
+
+    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
+
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
 
-    // Formata a resposta
     const resposta = `Olá! Recebemos sua mensagem: "${mensagem}". Em breve um vendedor entrará em contato.`;
 
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
