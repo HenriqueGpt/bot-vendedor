@@ -2,19 +2,17 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-// Middleware para interpretar JSON
+// Essencial para o req.body funcionar
 app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
     const numero = req.body.phone;
-    
-    // Corrigido: a mensagem vem em req.body.text.message
-    const msg = req.body.message?.body || req.body.text?.message;
+    const msg = req.body.text?.message;
 
     if (!numero || !msg) {
       console.log("❌ Mensagem inválida recebida:", req.body);
-      return res.status(400).send('Corpo da requisição inválido');
+      return res.sendStatus(400);
     }
 
     console.log("✅ Mensagem recebida de:", numero, "| Conteúdo:", msg);
@@ -24,21 +22,21 @@ app.post('/webhook', async (req, res) => {
 
     const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-message`;
 
     await axios.post(url, {
       phone: numero,
-      message: resposta,
+      message: resposta
     });
 
-    res.status(200).send('Mensagem processada com sucesso');
-  } catch (error) {
-    console.error("❌ Erro ao processar mensagem:", error.message);
-    res.status(500).send('Erro ao processar a mensagem');
+    res.sendStatus(200);
+  } catch (erro) {
+    console.error("❌ Erro ao processar mensagem:", erro.message);
+    res.sendStatus(500);
   }
 });
 
-const PORT = process.env.PORT || 10000;
+const PORT = 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
 });
