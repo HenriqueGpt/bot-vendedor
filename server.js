@@ -1,4 +1,4 @@
-// Versão: 1.0.5 (com Client-Token no cabeçalho)
+// Versão: 1.0.5
 
 const express = require('express');
 const axios = require('axios');
@@ -12,34 +12,38 @@ app.post('/webhook', async (req, res) => {
 
     console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
 
+    // Verifica se a mensagem é válida
     if (!mensagem || mensagem.trim() === '') {
       console.log("❌ Mensagem vazia ou inválida.");
       return res.sendStatus(200);
     }
 
+    // Só responde se a origem for o número do robô
+    const numeroBot = '5531972361753'; // número do bot
+    if (numero !== numeroBot) {
+      console.log("⚠️ Ignorado: número diferente do número do robô.");
+      return res.sendStatus(200);
+    }
+
+    // Variáveis de ambiente
     const instanceId = process.env.ZAPI_INSTANCE_ID;
-    const clientToken = process.env.CLIENT_TOKEN;
+    const token = process.env.ZAPI_TOKEN;
 
     const resposta = `Olá! Recebemos sua mensagem: "${mensagem}". Em breve um vendedor entrará em contato.`;
 
-    const url = `https://api.z-api.io/instances/${instanceId}/send-text`;
+    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
     const payload = {
       phone: numero,
       message: resposta,
     };
 
-    const headers = {
-      'Client-Token': clientToken,
-      'Content-Type': 'application/json',
-    };
-
-    await axios.post(url, payload, { headers });
-    console.log("✅ Mensagem enviada com sucesso.");
+    await axios.post(url, payload);
+    console.log("✅ Mensagem enviada com sucesso para", numero);
 
     res.sendStatus(200);
   } catch (erro) {
-    console.error("❌ Erro ao enviar resposta:", erro.response?.data || erro.message);
+    console.error("❌ Erro ao enviar resposta:", erro.message);
     res.sendStatus(500);
   }
 });
