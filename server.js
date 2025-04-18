@@ -6,35 +6,33 @@ const app = express();
 app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
-  const msg = req.body.message?.text?.body || '';
-  const numero = req.body.message?.from || '';
+  const msg = req.body.body;
+  const numero = req.body.from;
 
-  console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", msg);
+  console.log("📩 Mensagem recebida de:", numero, "Conteúdo:", msg);
+
+  const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
   const instanceId = process.env.ZAPI_INSTANCE_ID;
   const token = process.env.ZAPI_TOKEN;
 
-  console.log("🔁 INSTÂNCIA:", instanceId);
+  console.log("🧾 INSTÂNCIA:", instanceId);
   console.log("🔐 TOKEN:", token);
-
-  const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
   const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-messages`;
 
-
   try {
-    const payload = {
+    await axios.post(url, {
       phone: numero,
       message: resposta
-    };
+    });
 
-    const zapi = await axios.post(url, payload);
-    console.log("✅ Mensagem enviada com sucesso:", zapi.data);
-  } catch (error) {
-    console.error("❌ Erro ao enviar mensagem via Z-API:", error.response?.data || error.message);
+    console.log("✅ Resposta enviada com sucesso!");
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Erro ao enviar mensagem via Z-API:", err.message);
+    res.sendStatus(500);
   }
-
-  res.sendStatus(200);
 });
 
 app.listen(10000, () => {
