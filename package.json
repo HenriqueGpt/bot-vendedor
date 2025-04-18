@@ -1,13 +1,14 @@
 {
   "name": "bot-vendedor",
-  "version": "11.3.0",
-  "description": "Bot vendedor usando Z-API + Render",
+  "version": "1.0.6",
+  "description": "Bot vendedor usando Z-API + Render + OpenAI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.7",
-    "express": "^4.19.2"
+    "axios": "^1.8.4",
+    "express": "^5.1.0",
+    "dotenv": "^16.5.0"
   }
 }

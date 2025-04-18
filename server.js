@@ -1,16 +1,32 @@
-// Versão: 1.0.5
-
+// Versão: 1.0.6
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+
 const app = express();
 app.use(express.json());
 
-// 🔧 DADOS FIXOS DA Z-API
-const instanceId = '3DFE91CF4EC8F0C86C5932C54B267657';
-const token = 'DCFE374845888657AFAC58BE';
-
-// 🔧 URL da API de envio de mensagens
+const instanceId = process.env.ZAPI_INSTANCE_ID;
+const token = process.env.ZAPI_TOKEN;
+const openaiApiKey = process.env.OPENAI_API_KEY;
 const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+
+// Integração com OpenAI (ChatGPT)
+async function obterRespostaChatGPT(pergunta) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${openaiApiKey}`
+  };
+
+  const dados = {
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: pergunta }],
+    temperature: 0.7,
+  };
+
+  const respostaOpenAI = await axios.post('https://api.openai.com/v1/chat/completions', dados, { headers });
+  return respostaOpenAI.data.choices[0].message.content;
+}
 
 app.post('/webhook', async (req, res) => {
   try {
@@ -24,11 +40,11 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    const resposta = `Olá! Recebemos sua mensagem: "${mensagem}". Em breve um vendedor entrará em contato.`;
+    const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
     const payload = {
       phone: numero,
-      message: resposta,
+      message: respostaChatGPT,
     };
 
     console.log("📤 Enviando payload:", payload);
