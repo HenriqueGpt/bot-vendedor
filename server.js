@@ -1,22 +1,19 @@
-// server.js — Versão 11.0
-
 const express = require('express');
 const axios = require('axios');
 const app = express();
-
-app.use(express.json()); // Essencial para ler req.body
+app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
-    const numero = req.body.phone || req.body.from;
-    const msg = req.body.text?.message || req.body.message?.body;
+    const numero = req.body.phone;
+    const msg = req.body.text?.message || 'mensagem não detectada';
 
-    console.log('✅ Mensagem recebida de:', numero, '| Conteúdo:', msg);
+    console.log("📥 Mensagem recebida de:", numero, "| Conteúdo:", msg);
 
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
 
-    const resposta = `Recebemos sua mensagem: "${msg}". Um vendedor responderá em breve.`;
+    const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
@@ -27,15 +24,15 @@ app.post('/webhook', async (req, res) => {
 
     const headers = {
       'Content-Type': 'application/json',
-      'Client-Token': token // Header obrigatório da Z-API
+      'Authorization': token // <<<< Correção aplicada aqui
     };
 
-    const r = await axios.post(url, payload, { headers });
+    const envio = await axios.post(url, payload, { headers });
 
-    console.log('📤 Resposta enviada com sucesso para', numero);
+    console.log("✅ Resposta enviada com sucesso para", numero);
     res.sendStatus(200);
-  } catch (err) {
-    console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message);
+  } catch (error) {
+    console.error("❌ Erro ao enviar resposta:", error.response?.data || error.message);
     res.sendStatus(500);
   }
 });
