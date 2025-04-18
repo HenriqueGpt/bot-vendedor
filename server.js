@@ -2,13 +2,15 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-// ESSENCIAL: habilita leitura de JSON no body
+// Middleware para interpretar JSON
 app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
     const numero = req.body.phone;
-    const msg = req.body.message?.body;
+    
+    // Corrigido: a mensagem vem em req.body.text.message
+    const msg = req.body.message?.body || req.body.text?.message;
 
     if (!numero || !msg) {
       console.log("❌ Mensagem inválida recebida:", req.body);
