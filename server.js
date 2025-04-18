@@ -1,7 +1,7 @@
-// Versão: 1.0.5
-
 const express = require('express');
 const axios = require('axios');
+require('dotenv').config();
+
 const app = express();
 app.use(express.json());
 
@@ -12,24 +12,16 @@ app.post('/webhook', async (req, res) => {
 
     console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
 
-    // Verifica se a mensagem é válida
     if (!mensagem || mensagem.trim() === '') {
       console.log("❌ Mensagem vazia ou inválida.");
       return res.sendStatus(200);
     }
 
-    // Só responde se a origem for o número do robô
-    const numeroBot = '5531972361753'; // número do bot
-    if (numero !== numeroBot) {
-      console.log("⚠️ Ignorado: número diferente do número do robô.");
-      return res.sendStatus(200);
-    }
-
-    // Variáveis de ambiente
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
+    const openaiKey = process.env.OPENAI_API_KEY;
 
-    const resposta = `Olá! Recebemos sua mensagem: "${mensagem}". Em breve um vendedor entrará em contato.`;
+    const resposta = await gerarRespostaComGPT(mensagem, openaiKey);
 
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
@@ -39,14 +31,39 @@ app.post('/webhook', async (req, res) => {
     };
 
     await axios.post(url, payload);
-    console.log("✅ Mensagem enviada com sucesso para", numero);
+    console.log("✅ Resposta enviada para", numero);
 
     res.sendStatus(200);
   } catch (erro) {
-    console.error("❌ Erro ao enviar resposta:", erro.message);
+    console.error("❌ Erro ao enviar resposta:", erro.response?.data || erro.message);
     res.sendStatus(500);
   }
 });
+
+async function gerarRespostaComGPT(pergunta, apiKey) {
+  const resposta = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: 'Você é um assistente comercial da Hydrotech Brasil. Responda de forma objetiva, clara e cordial. Fale sobre biodigestores, fossas sépticas, sistemas de saneamento e produtos da empresa.',
+        },
+        { role: 'user', content: pergunta },
+      ],
+      temperature: 0.7,
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+  return resposta.data.choices[0].message.content;
+}
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
