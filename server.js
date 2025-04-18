@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const app = express();
@@ -5,30 +6,26 @@ const app = express();
 app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
-  const body = req.body;
-  const msg = body?.message?.text?.body;
-  const numero = body?.message?.from;
-
-  if (!msg || !numero) return res.sendStatus(400);
+  const msg = req.body.body?.message?.text || '';
+  const numero = req.body.body?.key?.remoteJid || '';
 
   console.log("📩 Mensagem recebida de", numero + ":", msg);
 
-  // Log das variáveis de ambiente
+  // Log das variáveis
   const instanceId = process.env.ZAPI_INSTANCE_ID;
   const token = process.env.ZAPI_TOKEN;
-  console.log("🔍 ID:", instanceId);
-  console.log("🔍 TOKEN:", token);
+  console.log("🧩 INSTÂNCIA:", instanceId);
+  console.log("🧩 TOKEN:", token);
 
   const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
-
+  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-messages`;
   try {
     await axios.post(url, {
-      phone: numero,
+      phone: numero.split('@')[0],
       message: resposta
     });
-    console.log("✅ Resposta enviada para", numero);
+    console.log("✅ Mensagem enviada com sucesso!");
   } catch (err) {
     console.error("❌ Erro ao enviar mensagem via Z-API:", err.response?.data || err.message);
   }
@@ -38,5 +35,5 @@ app.post('/webhook', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🤖 Bot vendedor rodando na porta ${PORT}`);
+  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
 });
