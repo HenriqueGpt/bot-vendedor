@@ -1,11 +1,10 @@
-// Versão 1.0.8 - Bot Vendedor
-// Correção: Envio da resposta com Client-Token e número do destinatário
+// Versão 1.0.9 - Corrige token enviado no cabeçalho HTTP
 
 const express = require('express');
 const axios = require('axios');
 const app = express();
 
-app.use(express.json()); // Habilita leitura do corpo JSON
+app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
@@ -17,19 +16,19 @@ app.post('/webhook', async (req, res) => {
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
 
-    // Mensagem de resposta
     const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+    // ✅ NOVO ENDPOINT (sem token na URL)
+    const url = `https://api.z-api.io/instances/${instanceId}/send-text`;
 
     const payload = {
       phone: numero,
-      message: resposta,
+      message: resposta
     };
 
     const headers = {
       'Content-Type': 'application/json',
-      'Client-Token': token,
+      'Client-Token': token // ✅ Aqui agora está certo!
     };
 
     const result = await axios.post(url, payload, { headers });
