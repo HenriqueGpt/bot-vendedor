@@ -1,10 +1,21 @@
 {
   "name": "bot-vendedor",
   "version": "1.0.0",
+  "description": "Bot vendedor integrado à Z-API e OpenAI, operando via Webhook.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "keywords": [
+    "bot",
+    "whatsapp",
+    "vendedor",
+    "z-api",
+    "openai",
+    "webhook"
+  ],
+  "author": "Carlos Henrique Carvalho Macedo",
+  "license": "MIT",
   "dependencies": {
     "axios": "^1.6.0",
     "express": "^4.18.2"
