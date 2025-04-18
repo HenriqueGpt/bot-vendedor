@@ -1,6 +1,7 @@
+// Versão: 1.0.6
+
 const express = require('express');
 const axios = require('axios');
-
 const app = express();
 app.use(express.json());
 
@@ -11,16 +12,18 @@ app.post('/webhook', async (req, res) => {
 
     console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
 
+    // Verifica se a mensagem é válida
     if (!mensagem || mensagem.trim() === '') {
       console.log("❌ Mensagem vazia ou inválida.");
       return res.sendStatus(200);
     }
 
+    // Carrega variáveis de ambiente
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
-    const openaiKey = process.env.OPENAI_API_KEY;
 
-    const resposta = await gerarRespostaComGPT(mensagem, openaiKey);
+    // Formata a resposta
+    const resposta = `Olá! Recebemos sua mensagem: "${mensagem}". Em breve um vendedor entrará em contato.`;
 
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
@@ -30,7 +33,7 @@ app.post('/webhook', async (req, res) => {
     };
 
     await axios.post(url, payload);
-    console.log("✅ Resposta enviada para", numero);
+    console.log("✅ Mensagem enviada com sucesso para", numero);
 
     res.sendStatus(200);
   } catch (erro) {
@@ -38,31 +41,6 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(500);
   }
 });
-
-async function gerarRespostaComGPT(pergunta, apiKey) {
-  const resposta = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: 'Você é um assistente comercial da Hydrotech Brasil. Responda de forma objetiva, clara e cordial. Fale sobre biodigestores, fossas sépticas, sistemas de saneamento e produtos da empresa.',
-        },
-        { role: 'user', content: pergunta },
-      ],
-      temperature: 0.7,
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  return resposta.data.choices[0].message.content;
-}
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
