@@ -1,51 +1,54 @@
-// Versão 1.0.5 - Correção definitiva no envio via Z-API Web + melhorias de log
+// Versão 1.0.6 - Diagnóstico de token + melhorias
+
 const express = require('express');
 const axios = require('axios');
 const app = express();
-const PORT = 10000;
 
-// Middleware essencial para o parser do JSON
-app.use(express.json());
+app.use(express.json()); // Habilita leitura de JSON
 
 app.post('/webhook', async (req, res) => {
   try {
-    const body = req.body;
+    const numero = req.body.phone;
+    const msg = req.body.text?.message;
 
-    // Verifica se o corpo tem a estrutura correta
-    if (!body || !body.phone || !body.text || !body.text.message) {
-      console.log('❌ Mensagem inválida recebida:', JSON.stringify(body, null, 2));
-      return res.status(400).send('Formato de mensagem inválido.');
-    }
+    console.log(`✅ Mensagem recebida de: ${numero} | Conteúdo: ${msg}`);
 
-    const numero = body.phone;
-    const msg = body.text.message;
-
-    console.log(`📥 Mensagem recebida de: ${numero} | Conteúdo: ${msg}`);
-
-    // Carrega as variáveis de ambiente
+    // Captura variáveis de ambiente
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
 
-    // Monta resposta automática
+    // 🔍 Diagnóstico para garantir que os valores estão sendo lidos
+    console.log(`🔍 Verificando variáveis de ambiente:`);
+    console.log(`- ID: ${instanceId}`);
+    console.log(`- TOKEN: ${token}`);
+
+    if (!instanceId || !token) {
+      console.error('❌ Erro: Variáveis de ambiente ZAPI_INSTANCE_ID ou ZAPI_TOKEN não definidas.');
+      return res.sendStatus(500);
+    }
+
+    // Monta a resposta
     const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-    // Monta a URL da Z-API (web)
+    // Monta o endpoint da Z-API
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-    // Faz o envio da resposta via POST
+    // Envia a resposta
     await axios.post(url, {
       phone: numero,
-      message: resposta
+      message: resposta,
     });
 
-    console.log(`📤 Mensagem enviada para ${numero}`);
+    console.log(`✅ Resposta enviada com sucesso para ${numero}`);
     res.sendStatus(200);
+
   } catch (err) {
-    console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message);
+    console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message || err);
     res.sendStatus(500);
   }
 });
 
+const PORT = 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
 });
