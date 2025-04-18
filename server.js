@@ -19,7 +19,8 @@ app.post('/webhook', async (req, res) => {
 
   const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+  const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-messages`;
+
 
   try {
     const payload = {
