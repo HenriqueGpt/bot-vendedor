@@ -1,4 +1,4 @@
-// Versão: 1.0.7
+// Versão: 1.0.8
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
@@ -7,13 +7,14 @@ const app = express();
 app.use(express.json());
 
 // Variáveis de ambiente
-const instanceId     = process.env.ZAPI_INSTANCE_ID;
-const token          = process.env.ZAPI_TOKEN;
-const clientToken    = process.env.ZAPI_CLIENT_TOKEN;   // Account Security Token da Z‑API
-const openaiApiKey   = process.env.OPENAI_API_KEY;
-const url            = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+const instanceId   = process.env.ZAPI_INSTANCE_ID;
+const token        = process.env.ZAPI_TOKEN;
+const clientToken  = process.env.ZAPI_CLIENT_TOKEN;   // Account Security Token da Z‑API
+const openaiApiKey = process.env.OPENAI_API_KEY;
+const botNumber    = process.env.ROBOT_NUMBER;        // Ex: "5531972361753"
+const url          = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função para obter resposta do ChatGPT
+// Função para gerar resposta via ChatGPT
 async function obterRespostaChatGPT(pergunta) {
   const headers = {
     'Content-Type': 'application/json',
@@ -26,13 +27,13 @@ async function obterRespostaChatGPT(pergunta) {
     temperature: 0.7,
   };
 
-  const respostaOpenAI = await axios.post(
+  const resposta = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     dados,
     { headers }
   );
 
-  return respostaOpenAI.data.choices[0].message.content;
+  return resposta.data.choices[0].message.content;
 }
 
 app.post('/webhook', async (req, res) => {
@@ -40,14 +41,14 @@ app.post('/webhook', async (req, res) => {
     const numero   = req.body.phone;
     const mensagem = req.body?.text?.message;
 
-    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
-
-    if (!mensagem || mensagem.trim() === '') {
-      console.log("❌ Mensagem vazia ou inválida.");
+    // Filtra: sem mensagem ou vinda do próprio robô => ignora
+    if (!mensagem || mensagem.trim() === '' || numero === botNumber) {
       return res.sendStatus(200);
     }
 
-    // Gera resposta via ChatGPT
+    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
+
+    // Gera resposta do ChatGPT
     const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
     const payload = {
@@ -57,12 +58,12 @@ app.post('/webhook', async (req, res) => {
 
     console.log("📤 Enviando payload:", payload);
 
-    // Chamada à Z‑API, incluindo o header Client-Token se configurado
-    const headers = clientToken
-      ? { 'Client-Token': clientToken }
-      : undefined;
+    // Configura headers adicionais se houver clientToken
+    const config = clientToken
+      ? { headers: { 'Client-Token': clientToken } }
+      : {};
 
-    const respostaApi = await axios.post(url, payload, headers ? { headers } : {});
+    const respostaApi = await axios.post(url, payload, config);
     console.log("✅ Mensagem enviada com sucesso. Resposta API:", respostaApi.data);
 
     res.sendStatus(200);
