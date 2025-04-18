@@ -1,4 +1,4 @@
-// Versão: 1.0.8
+// Versão: 1.0.9
 
 const express = require('express');
 const axios = require('axios');
@@ -7,28 +7,20 @@ app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
-    // Garante número correto
-    const numero =
-      req.body.phone ||
-      req.body.key?.remoteJid?.replace('@s.whatsapp.net', '') ||
-      null;
+    let numero = req.body.phone || req.body.key?.remoteJid?.replace('@s.whatsapp.net', '') || null;
+    const mensagem = req.body?.text?.message || req.body?.message?.body || null;
 
-    const mensagem =
-      req.body?.text?.message ||
-      req.body?.message?.body ||
-      null;
-
-    if (!numero) {
-      console.log("❌ Erro: número ausente ou inválido.");
-      return res.sendStatus(200);
-    }
-
-    if (!mensagem || mensagem.trim() === '') {
-      console.log("❌ Mensagem vazia.");
-      return res.sendStatus(200);
+    // Garante que o número esteja no formato 55xxxxxxxxxxx
+    if (numero && !numero.startsWith('55')) {
+      numero = `55${numero}`;
     }
 
     console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
+
+    if (!numero || !mensagem || mensagem.trim() === '') {
+      console.log("❌ Número ou mensagem ausente/inválida.");
+      return res.sendStatus(200);
+    }
 
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
@@ -41,6 +33,8 @@ app.post('/webhook', async (req, res) => {
       phone: numero,
       message: resposta,
     };
+
+    console.log("📤 Enviando payload:", payload);
 
     await axios.post(url, payload);
     console.log("✅ Mensagem enviada com sucesso para", numero);
