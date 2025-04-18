@@ -1,44 +1,47 @@
-// Versão: 1.0.9
+// Versão 1.0.5
 
 const express = require('express');
 const axios = require('axios');
 const app = express();
+require('dotenv').config();
+
 app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   try {
-    let numero = req.body.phone || req.body.key?.remoteJid?.replace('@s.whatsapp.net', '') || null;
-    const mensagem = req.body?.text?.message || req.body?.message?.body || null;
-
-    // Garante que o número esteja no formato 55xxxxxxxxxxx
-    if (numero && !numero.startsWith('55')) {
-      numero = `55${numero}`;
-    }
+    const numero = req.body.phone;
+    const mensagem = req.body?.text?.message;
 
     console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
 
-    if (!numero || !mensagem || mensagem.trim() === '') {
-      console.log("❌ Número ou mensagem ausente/inválida.");
+    if (!mensagem || mensagem.trim() === '') {
+      console.log("❌ Mensagem vazia ou inválida.");
       return res.sendStatus(200);
     }
 
+    // Dados da Z-API
     const instanceId = process.env.ZAPI_INSTANCE_ID;
-    const token = process.env.ZAPI_TOKEN;
+    const clientToken = process.env.CLIENT_TOKEN;
 
     const resposta = `Olá! Recebemos sua mensagem: "${mensagem}". Em breve um vendedor entrará em contato.`;
-
-    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
     const payload = {
       phone: numero,
       message: resposta,
     };
 
+    const headers = {
+      'Content-Type': 'application/json',
+      'Client-Token': clientToken
+    };
+
+    const endpoint = `https://api.z-api.io/instances/${instanceId}/send-text`;
+
     console.log("📤 Enviando payload:", payload);
 
-    await axios.post(url, payload);
-    console.log("✅ Mensagem enviada com sucesso para", numero);
+    const envio = await axios.post(endpoint, payload, { headers });
 
+    console.log("✅ Resposta enviada com sucesso:", envio.data);
     res.sendStatus(200);
   } catch (erro) {
     console.error("❌ Erro ao enviar resposta:", erro.response?.data || erro.message);
@@ -48,5 +51,5 @@ app.post('/webhook', async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
+  console.log(`🚀 Bot vendedor rodando na porta ${PORT} - v1.0.5`);
 });
