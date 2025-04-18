@@ -1,10 +1,11 @@
-// Versão 1.0.7 - Corrige envio para Z-API com Client-Token no header
+// Versão 1.0.8 - Bot Vendedor
+// Correção: Envio da resposta com Client-Token e número do destinatário
 
 const express = require('express');
 const axios = require('axios');
 const app = express();
 
-app.use(express.json()); // Habilita leitura do body em JSON
+app.use(express.json()); // Habilita leitura do corpo JSON
 
 app.post('/webhook', async (req, res) => {
   try {
@@ -16,36 +17,28 @@ app.post('/webhook', async (req, res) => {
     const instanceId = process.env.ZAPI_INSTANCE_ID;
     const token = process.env.ZAPI_TOKEN;
 
-    console.log("🔍 Verificando variáveis de ambiente:");
-    console.log(`- ID: ${instanceId}`);
-    console.log(`- TOKEN: ${token}`);
-
-    if (!instanceId || !token) {
-      console.error('❌ Erro: Variáveis de ambiente não definidas.');
-      return res.sendStatus(500);
-    }
-
+    // Mensagem de resposta
     const resposta = `Olá! Recebemos sua mensagem: "${msg}". Em breve um vendedor entrará em contato.`;
 
-    const url = `https://api.z-api.io/instances/${instanceId}/send-text`;
-
-    const headers = {
-      'Content-Type': 'application/json',
-      'Client-Token': token,
-    };
+    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
     const payload = {
       phone: numero,
       message: resposta,
     };
 
-    await axios.post(url, payload, { headers });
+    const headers = {
+      'Content-Type': 'application/json',
+      'Client-Token': token,
+    };
 
-    console.log(`✅ Resposta enviada com sucesso para ${numero}`);
+    const result = await axios.post(url, payload, { headers });
+
+    console.log(`📤 Resposta enviada com sucesso para ${numero}`);
     res.sendStatus(200);
 
   } catch (err) {
-    console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message || err);
+    console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message);
     res.sendStatus(500);
   }
 });
