@@ -1,6 +1,6 @@
 {
   "name": "bot-vendedor",
-  "version": "11.2.0",
+  "version": "11.3.0",
   "description": "Bot vendedor usando Z-API + Render",
   "main": "server.js",
   "scripts": {
