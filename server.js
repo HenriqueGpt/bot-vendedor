@@ -56,7 +56,7 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     .eq('phone', phone)
     .single();
   if (error && error.code !== 'PGRST116') throw error;
-  let threadId = data?.thread_id; :contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}
+  let threadId = data?.thread_id;
 
   // 2) Se não existir, cria thread nova e persiste  
   if (!threadId) {
@@ -103,7 +103,6 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     { headers }
   );
   const msgs = msgsResp.data.data;
-  console.log("🔖 messagesResp.data.data:", msgs);
 
   // 7) Seleciona a primeira mensagem de 'assistant' (mais recente)  
   const firstAssistant = msgs.find(m => m.role === 'assistant');
@@ -111,7 +110,7 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     ? extractMessageText(firstAssistant.content)
     : '';
 
-  return resposta; :contentReference[oaicite:2]{index=2}&#8203;:contentReference[oaicite:3]{index=3}
+  return resposta;
 }
 
 app.post('/webhook', async (req, res) => {
