@@ -1,7 +1,8 @@
-// server.js — Versão: v1.2.4
+// Versão: 1.2.0
 require('dotenv').config();
-console.log('🚀 Iniciando Bot V1.2.4...');
-console.log('🔑 ZAPI_CLIENT_TOKEN:', process.env.ZAPI_CLIENT_TOKEN);
+
+// ⚠️ Para ambientes com certificado self‑signed
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const express = require('express');
 const axios   = require('axios');
@@ -12,94 +13,94 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Agente HTTPS que ignora validação de certificado (dev)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-const httpsAgent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
+// — Agente HTTPS que ignora verificação de certificado —
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Pool do Postgres (Supabase Transaction Pooler, IPv4 + SSL)
+// — Pool PostgreSQL (força IPv4 + SSL) —
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: true },
-  lookup: (host, opts, cb) => dns.lookup(host, { family: 4 }, cb),
+  ssl: { rejectUnauthorized: false },
+  lookup: (hostname, options, callback) =>
+    dns.lookup(hostname, { family: 4 }, callback),
 });
 
-// Credenciais
-const {
-  ZAPI_INSTANCE_ID: instanceId,
-  ZAPI_TOKEN: token,
-  ZAPI_CLIENT_TOKEN: clientToken,
-  OPENAI_API_KEY: openaiApiKey
-} = process.env;
+// — Variáveis de ambiente Z‑API e OpenAI —
+const instanceId   = process.env.ZAPI_INSTANCE_ID;
+const token        = process.env.ZAPI_TOKEN;
+const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
+const openaiApiKey = process.env.OPENAI_API_KEY;
+const PORT         = process.env.PORT || 10000;
 
-if (!clientToken) {
-  console.error('❌ ZAPI_CLIENT_TOKEN está vazio! Verifique suas variáveis de ambiente.');
-  process.exit(1);
-}
+// URL da Z‑API
+const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-const zapiUrl = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+// 🔍 Debug: imprima na inicialização
+console.log('🔑 ZAPI_CLIENT_TOKEN:', clientToken);
+console.log('🌐 DATABASE_URL:', process.env.DATABASE_URL);
 
-// Gera resposta via ChatGPT
+// — Função para chamar o ChatGPT via OpenAI API —
 async function obterRespostaChatGPT(pergunta) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${openaiApiKey}`,
+  };
+  const body = {
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: pergunta }],
+    temperature: 0.7,
+  };
   const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
-    {
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: pergunta }],
-      temperature: 0.7,
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`
-      },
-      httpsAgent
-    }
+    body,
+    { headers, httpsAgent }
   );
   return resp.data.choices[0].message.content;
 }
 
 app.post('/webhook', async (req, res) => {
   try {
-    const { fromMe, text, isStatusReply, phone } = req.body;
-    const msg = text?.message?.trim();
-    if (isStatusReply || fromMe || !msg) return res.sendStatus(200);
+    const { fromMe, isStatusReply, text, phone } = req.body;
+    const mensagem = text?.message;
 
-    console.log(`📩 Mensagem recebida de: ${phone} | Conteúdo: ${msg}`);
+    // — Filtrar mensagens sem conteúdo, status ou do próprio bot —
+    if (fromMe || isStatusReply || !mensagem || mensagem.trim() === '') {
+      return res.sendStatus(200);
+    }
 
-    // 1) Resposta do ChatGPT
-    const botReply = await obterRespostaChatGPT(msg);
+    console.log(`📩 Mensagem recebida de: ${phone} | Conteúdo: "${mensagem}"`);
 
-    // 2) Persiste no banco
-    const { rowCount } = await pool.query(
+    // 1️⃣ Obter resposta do ChatGPT
+    const respostaChatGPT = await obterRespostaChatGPT(mensagem);
+
+    // 2️⃣ Gravar no banco de dados
+    const insertResult = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
-      [phone, msg, botReply]
+      [phone, mensagem, respostaChatGPT]
     );
-    console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
+    console.log(`💾 Gravado no banco: ${insertResult.rowCount} linha(s)`);
 
-    // 3) Envia pela Z‑API com Client‑Token
-    console.log('📤 Enviando payload:', { phone, message: botReply });
-    await axios.post(
-      zapiUrl,
-      { phone, message: botReply },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Client-Token': clientToken
-        },
-        httpsAgent
-      }
-    );
-    console.log('✅ Mensagem enviada com sucesso.');
+    // 3️⃣ Enviar resposta pela Z‑API (com o Client‑Token)
+    const payload = { phone, message: respostaChatGPT };
+    console.log('📤 Enviando payload:', payload);
 
-    res.sendStatus(200);
+    const axiosConfig = {
+      httpsAgent,
+      headers: clientToken
+        ? { 'Client-Token': clientToken }
+        : undefined
+    };
+
+    const apiResp = await axios.post(url, payload, axiosConfig);
+    console.log('✅ Mensagem enviada com sucesso. Resposta API:', apiResp.data);
+
+    return res.sendStatus(200);
   } catch (err) {
     console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message);
-    res.sendStatus(500);
+    return res.sendStatus(500);
   }
 });
 
-const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
 });
