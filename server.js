@@ -1,4 +1,3 @@
-// server.js — Versão: v1.3.2
 require('dotenv').config();
 // Desabilita verificação de certificado TLS (apenas dev)
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -28,11 +27,13 @@ app.use(express.json());
 // HTTPS Agent que ignora certificado
 const httpsAgent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
 
-// Pool PostgreSQL (Supabase Transaction Pooler, IPv4)
+// Pool PostgreSQL com channelBinding desabilitado
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false },
+  // força IPv4 e desabilita channel binding para SCRAM
   lookup: (host, opts, cb) => dns.lookup(host, { family: 4 }, cb),
+  channelBinding: 'disable'
 });
 
 // URL da Z‑API
@@ -41,8 +42,18 @@ const zapiUrl = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI
 async function obterRespostaChatGPT(pergunta) {
   const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
-    { model: 'gpt-3.5-turbo', messages:[{role:'user',content:pergunta}], temperature:0.7 },
-    { headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${OPENAI_API_KEY}` }, httpsAgent }
+    {
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: pergunta }],
+      temperature: 0.7
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      httpsAgent
+    }
   );
   return resp.data.choices[0].message.content;
 }
@@ -58,8 +69,8 @@ app.post('/webhook', async (req, res) => {
     const botReply = await obterRespostaChatGPT(msg);
 
     const { rowCount } = await pool.query(
-      `INSERT INTO public.messages(phone,user_message,bot_response) VALUES($1,$2,$3)`,
-      [phone,msg,botReply]
+      `INSERT INTO public.messages(phone, user_message, bot_response) VALUES($1, $2, $3)`,
+      [phone, msg, botReply]
     );
     console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
 
@@ -68,7 +79,10 @@ app.post('/webhook', async (req, res) => {
       zapiUrl,
       { phone, message: botReply },
       {
-        headers: { 'Content-Type':'application/json','Client-Token':ZAPI_CLIENT_TOKEN },
+        headers: {
+          'Content-Type': 'application/json',
+          'Client-Token': ZAPI_CLIENT_TOKEN
+        },
         httpsAgent
       }
     );
