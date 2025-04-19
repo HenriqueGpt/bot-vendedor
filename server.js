@@ -1,19 +1,28 @@
-// Versão: 1.0.9
+// Versão: 1.1.1
 require('dotenv').config();
 const express = require('express');
-const axios = require('axios');
+const axios   = require('axios');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(express.json());
 
-// Variáveis de ambiente
+// Configuração do banco de dados
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false }
+    : false,
+});
+
+// Variáveis de ambiente da Z‑API e OpenAI
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
-const clientToken  = process.env.ZAPI_CLIENT_TOKEN;   // Account Security Token da Z‑API
+const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const url          = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função para gerar resposta via ChatGPT
+// Função para obter a resposta do ChatGPT
 async function obterRespostaChatGPT(pergunta) {
   const headers = {
     'Content-Type': 'application/json',
@@ -24,39 +33,40 @@ async function obterRespostaChatGPT(pergunta) {
     messages: [{ role: 'user', content: pergunta }],
     temperature: 0.7,
   };
-  const resposta = await axios.post(
+  const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     dados,
     { headers }
   );
-  return resposta.data.choices[0].message.content;
+  return resp.data.choices[0].message.content;
 }
 
 app.post('/webhook', async (req, res) => {
   try {
-    const { fromMe, text, isStatusReply } = req.body;
+    const { fromMe, text, isStatusReply, phone } = req.body;
     const mensagem = text?.message;
 
-    // 1) Filtrar:  
-    // • Ignorar status reply (resposta de entrega)  
-    // • Ignorar mensagens enviadas pelo próprio bot (fromMe=true)  
+    // 1) Filtrar: sem texto, status reply ou vindo do próprio bot
     if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
       return res.sendStatus(200);
     }
 
-    // 2) Processar mensagem do usuário
-    const numero = req.body.phone;
-    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
+    console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
 
+    // 2) Obter resposta do ChatGPT
     const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
-    const payload = {
-      phone: numero,
-      message: respostaChatGPT,
-    };
-    console.log("📤 Enviando payload:", payload);
+    // 3) Gravar interação no banco
+    const dbResult = await pool.query(
+      `INSERT INTO public.messages(phone, user_message, bot_response)
+       VALUES($1, $2, $3)`,
+      [phone, mensagem, respostaChatGPT]
+    );
+    console.log(`💾 Gravado no banco: ${dbResult.rowCount} linha(s) inserida(s)`);
 
-    // 3) Chamada à Z‑API (com header Client-Token se configurado)
+    // 4) Enviar via Z‑API
+    const payload = { phone, message: respostaChatGPT };
+    console.log("📤 Enviando payload:", payload);
     const config = clientToken
       ? { headers: { 'Client-Token': clientToken } }
       : {};
