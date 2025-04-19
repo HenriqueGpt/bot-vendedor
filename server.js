@@ -1,7 +1,7 @@
-// server.js — Versão: v1.2.3
+// server.js — Versão: v1.2.4
 require('dotenv').config();
-// (Somente em dev) desabilita verificação de certificado TLS
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+console.log('🚀 Iniciando Bot V1.2.4...');
+console.log('🔑 ZAPI_CLIENT_TOKEN:', process.env.ZAPI_CLIENT_TOKEN);
 
 const express = require('express');
 const axios   = require('axios');
@@ -12,24 +12,29 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Agente HTTPS que ignora validação de certificado
+// Agente HTTPS que ignora validação de certificado (dev)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const httpsAgent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
 
 // Pool do Postgres (Supabase Transaction Pooler, IPv4 + SSL)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: true },
-  lookup: (hostname, options, callback) =>
-    dns.lookup(hostname, { family: 4 }, callback),
+  lookup: (host, opts, cb) => dns.lookup(host, { family: 4 }, cb),
 });
 
-// Credenciais da Z‑API e OpenAI
+// Credenciais
 const {
   ZAPI_INSTANCE_ID: instanceId,
   ZAPI_TOKEN: token,
   ZAPI_CLIENT_TOKEN: clientToken,
   OPENAI_API_KEY: openaiApiKey
 } = process.env;
+
+if (!clientToken) {
+  console.error('❌ ZAPI_CLIENT_TOKEN está vazio! Verifique suas variáveis de ambiente.');
+  process.exit(1);
+}
 
 const zapiUrl = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
@@ -72,7 +77,7 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
 
-    // 3) Envia pela Z‑API com header Client‑Token
+    // 3) Envia pela Z‑API com Client‑Token
     console.log('📤 Enviando payload:', { phone, message: botReply });
     await axios.post(
       zapiUrl,
