@@ -7,41 +7,35 @@ const axios             = require('axios');
 const app = express();
 app.use(express.json());
 
-// Inicializa Supabase (server-side)  
+// Inicializa Supabase (server-side)
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
 
-// Variáveis de ambiente Z-API e OpenAI  
+// Variáveis de ambiente Z-API e OpenAI
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função utilitária para extrair texto de content arrays  
+// Extrai texto de content arrays
 function extractMessageText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return content.map(segment => {
-      if (typeof segment === 'string') {
-        return segment;
-      }
-      if (segment.text && typeof segment.text.value === 'string') {
-        return segment.text.value;
-      }
-      if (typeof segment.content === 'string') {
-        return segment.content;
-      }
+    return content.map(seg => {
+      if (typeof seg === 'string') return seg;
+      if (seg.text?.value)       return seg.text.value;
+      if (typeof seg.content === 'string') return seg.content;
       return '';
     }).join('');
   }
   return '';
 }
 
-// Função com memória em tempo real e seleção correta da resposta
-async function obterRespostaAssistenteComMemoria(pergunta, phone) {
+// Função principal: mantém histórico e obtém resposta
+async function obterResposta(pergunta, phone) {
   const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
   const headers    = {
     'Content-Type':  'application/json',
@@ -49,98 +43,71 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     'OpenAI-Beta':   'assistants=v2'
   };
 
-  // 1) Busca thread existente no Supabase  
-  const { data, error } = await supabase
-    .from('user_threads')
-    .select('thread_id')
-    .eq('phone', phone)
-    .single();
+  // 1) Recupera ou cria threadId
+  let { data, error } = await supabase
+    .from('user_threads').select('thread_id').eq('phone', phone).single();
   if (error && error.code !== 'PGRST116') throw error;
+
   let threadId = data?.thread_id;
-
-  // 2) Se não existir, cria thread nova e persiste  
   if (!threadId) {
-    const threadResp = await axios.post(
-      'https://api.openai.com/v1/threads',
-      {}, { headers }
-    );
-    threadId = threadResp.data.id;
-    const { error: errInsert } = await supabase
-      .from('user_threads')
-      .insert({ phone, thread_id: threadId });
-    if (errInsert) throw errInsert;
+    threadId = (await axios.post('https://api.openai.com/v1/threads', {}, { headers })).data.id;
+    await supabase.from('user_threads').insert({ phone, thread_id: threadId });
   }
 
-  // 3) Envia a pergunta do usuário na mesma thread  
-  await axios.post(
-    `https://api.openai.com/v1/threads/${threadId}/messages`,
-    { role: 'user', content: pergunta },
-    { headers }
+  // 2) Envia pergunta
+  await axios.post(`https://api.openai.com/v1/threads/${threadId}/messages`,
+    { role: 'user', content: pergunta }, { headers }
   );
 
-  // 4) Dispara o run do assistente  
-  const runResp = await axios.post(
+  // 3) Gera resposta
+  let run = await axios.post(
     `https://api.openai.com/v1/threads/${threadId}/runs`,
-    { assistant_id: assistantId },
-    { headers }
+    { assistant_id: assistantId }, { headers }
   );
-  let { id: runId, status } = runResp.data;
+  let { id: runId, status } = run.data;
 
-  // 5) Aguarda a execução completar  
-  while (status === 'queued' || status === 'in_progress') {
-    await new Promise(r => setTimeout(r, 2000));
-    const chk = await axios.get(
-      `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
-      { headers }
-    );
-    status = chk.data.status;
+  while (status !== 'completed') {
+    await new Promise(r => setTimeout(r, 1000));
+    run = await axios.get(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, { headers });
+    status = run.data.status;
   }
-  if (status !== 'completed') throw new Error('Erro ao executar o assistente.');
 
-  // 6) Recupera todas as mensagens da thread  
-  const msgsResp = await axios.get(
-    `https://api.openai.com/v1/threads/${threadId}/messages`,
-    { headers }
-  );
-  const msgs = msgsResp.data.data;
-
-  // 7) Seleciona a primeira mensagem de 'assistant' (mais recente)  
-  const firstAssistant = msgs.find(m => m.role === 'assistant');
-  const resposta = firstAssistant
-    ? extractMessageText(firstAssistant.content)
-    : '';
-
-  return resposta;
+  // 4) Recupera mensagens e extrai última do assistant
+  const msgs = (await axios.get(
+    `https://api.openai.com/v1/threads/${threadId}/messages`, { headers }
+  )).data.data;
+  const last = msgs.filter(m => m.role === 'assistant').pop();
+  return last ? extractMessageText(last.content) : '';
 }
 
 app.post('/webhook', async (req, res) => {
   try {
     const { fromMe, text, isStatusReply, phone } = req.body;
-    const mensagem = text?.message;
-    if (isStatusReply || fromMe || !mensagem || !mensagem.trim()) {
-      return res.sendStatus(200);
-    }
+    const mensagem = text?.message?.trim();
+    if (fromMe || isStatusReply || !mensagem) return res.sendStatus(200);
 
-    console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
-    const resposta = await obterRespostaAssistenteComMemoria(mensagem, phone);
+    // Log simplificado: entrada e saída
+    console.log(`← ${phone}: ${mensagem}`);
 
-    const payload = { phone, message: resposta };
-    const config  = clientToken
-      ? { headers: { 'Client-Token': clientToken } }
-      : {};
+    const resposta = await obterResposta(mensagem, phone);
 
-    console.log("📤 Enviando payload:", payload);
-    const respApi = await axios.post(zapiUrl, payload, config);
-    console.log("✅ Mensagem enviada:", respApi.data);
+    console.log(`→ ${phone}: ${resposta}`);
 
-    return res.sendStatus(200);
-  } catch (erro) {
-    console.error("❌ Erro no webhook:", erro.response?.data || erro.message);
-    return res.sendStatus(500);
+    // Envio via Z-API
+    await axios.post(
+      zapiUrl,
+      { phone, message: resposta },
+      clientToken ? { headers: { 'Client-Token': clientToken } } : {}
+    );
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Erro no webhook:', err.message);
+    res.sendStatus(500);
   }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
+  console.log(`🚀 Bot rodando na porta ${PORT}`);
 });
