@@ -18,9 +18,9 @@ const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
-const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
+const zapiUrl      = `https://api.z‑api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Utilitário para extrair texto de estruturas de content
+// Extrai texto de estruturas de content
 function extractMessageText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -40,7 +40,7 @@ async function obterResposta(pergunta, phone) {
   const headers     = {
     'Content-Type':  'application/json',
     'Authorization': `Bearer ${openaiApiKey}`,
-    'OpenAI-Beta':   'assistants=v2'
+    'OpenAI‑Beta':   'assistants=v2'
   };
 
   // 1) Recupera registro do usuário
@@ -49,8 +49,8 @@ async function obterResposta(pergunta, phone) {
     .select('*')
     .eq('phone', phone)
     .single();
-  if (error && error.code !== 'PGRST116') throw error; :contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}
-
+  if (error && error.code !== 'PGRST116') throw error;
+  
   // 2) Primeiro contato: grava nome e responde saudação
   if (!user || !user.name) {
     if (user) {
