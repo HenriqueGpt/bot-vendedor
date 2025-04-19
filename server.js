@@ -26,7 +26,7 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   const headers    = {
     'Content-Type':  'application/json',
     'Authorization': `Bearer ${openaiApiKey}`,
-    'OpenAI-Beta':   'assistants=v2'
+    'OpenAI‑Beta':   'assistants=v2'
   };
 
   // 1) Busca thread existente no Supabase
@@ -45,7 +45,6 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
       {}, { headers }
     );
     threadId = threadResp.data.id;
-
     const { error: errInsert } = await supabase
       .from('user_threads')
       .insert({ phone, thread_id: threadId });
@@ -78,23 +77,30 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   }
   if (status !== 'completed') throw new Error('Erro ao executar o assistente.');
 
-  // 6) Lê o run final e adiciona debug
-  const runFinal = await axios.get(
-    `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
+  // 6) Recupera todas as mensagens da thread
+  const msgsResp = await axios.get(
+    `https://api.openai.com/v1/threads/${threadId}/messages`,
     { headers }
   );
-  console.log("🔖 runFinal.data:", runFinal.data);
+  console.log("🔖 messagesResp.data.data:", msgsResp.data.data);
 
-  // 7) Extrai a resposta correta de runFinal.data.messages
-  const msgs = runFinal.data.messages || [];
-  const assistantMsg = msgs.slice().reverse().find(m => m.role === 'assistant');
-  const respostaAssistente = assistantMsg
-    ? (typeof assistantMsg.content === 'string'
-        ? assistantMsg.content
-        : assistantMsg.content.text || '')
-    : '';
+  const msgs = msgsResp.data.data;
+  // 7) Filtra apenas mensagens de 'assistant' e pega a última
+  const assistantMsgs = msgs.filter(m => m.role === 'assistant');
+  const last = assistantMsgs[assistantMsgs.length - 1];
+  let resposta = '';
 
-  return respostaAssistente;
+  if (last) {
+    if (typeof last.content === 'string') {
+      resposta = last.content;
+    } else if (Array.isArray(last.content) && last.content[0]?.text?.value) {
+      resposta = last.content[0].text.value;
+    } else if (last.content?.text?.value) {
+      resposta = last.content.text.value;
+    }
+  }
+
+  return resposta;
 }
 
 app.post('/webhook', async (req, res) => {
