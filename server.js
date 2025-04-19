@@ -1,7 +1,6 @@
-// server.js — Versão: 1.1.5
+// server.js — Versão: v1.2.1
 require('dotenv').config();
-// força aceitar certificados self‑signed (se você confia na conexão)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+console.log('🚀 Iniciando Bot V1.2.1...');
 
 const express = require('express');
 const axios   = require('axios');
@@ -12,39 +11,41 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// agente HTTPS que ignora verificação de certificado
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+// Agente HTTPS para chamadas à OpenAI e Z‑API
+const httpsAgent = new https.Agent({ keepAlive: true });
 
-// configura pool do Postgres (IPv4 + SSL)
+// Pool do Postgres (Direct Connection do Supabase, IPv4 + SSL válido)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  lookup: (hostname, options, cb) => dns.lookup(hostname, { family: 4 }, cb),
+  ssl: { rejectUnauthorized: true },
+  lookup: (hostname, options, callback) =>
+    dns.lookup(hostname, { family: 4 }, callback),
 });
 
-// Z‑API e OpenAI
-const instanceId   = process.env.ZAPI_INSTANCE_ID;
-const token        = process.env.ZAPI_TOKEN;
-const openaiApiKey = process.env.OPENAI_API_KEY;
+// Variáveis da Z‑API e OpenAI
+const {
+  ZAPI_INSTANCE_ID: instanceId,
+  ZAPI_TOKEN: token,
+  OPENAI_API_KEY: openaiApiKey
+} = process.env;
 
-// URL de envio de texto na Z‑API
 const zapiUrl = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// gera resposta do ChatGPT
 async function obterRespostaChatGPT(pergunta) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${openaiApiKey}`
-  };
-  const body = {
-    model: 'gpt-3.5-turbo',
-    messages: [{ role: 'user', content: pergunta }],
-    temperature: 0.7,
-  };
   const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
-    body,
-    { headers, httpsAgent }
+    {
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: pergunta }],
+      temperature: 0.7,
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openaiApiKey}`,
+      },
+      httpsAgent,
+    }
   );
   return resp.data.choices[0].message.content;
 }
@@ -52,35 +53,31 @@ async function obterRespostaChatGPT(pergunta) {
 app.post('/webhook', async (req, res) => {
   try {
     const { fromMe, text, isStatusReply, phone } = req.body;
-    const mensagem = text?.message;
+    const msg = text?.message?.trim();
+    if (isStatusReply || fromMe || !msg) return res.sendStatus(200);
 
-    // ignora mensagens de sistema, vazias ou enviadas pelo bot
-    if (isStatusReply || fromMe || !mensagem?.trim()) {
-      return res.sendStatus(200);
-    }
+    console.log(`📩 Mensagem recebida de: ${phone} | Conteúdo: ${msg}`);
 
-    console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
+    // 1) Gera resposta via ChatGPT
+    const botReply = await obterRespostaChatGPT(msg);
 
-    // 1) Resposta do ChatGPT
-    const respostaChatGPT = await obterRespostaChatGPT(mensagem);
-
-    // 2) Grava no banco
-    const { rowCount } = await pool.query(
+    // 2) Persiste no PostgreSQL
+    const result = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
-      [phone, mensagem, respostaChatGPT]
+      [phone, msg, botReply]
     );
-    console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
+    console.log(`💾 Gravado no banco: ${result.rowCount} linha(s)`);
 
-    // 3) Envia pela Z‑API (sem cabeçalhos extras)
-    console.log("📤 Enviando payload:", { phone, message: respostaChatGPT });
-    await axios.post(zapiUrl, { phone, message: respostaChatGPT }, { httpsAgent });
-    console.log("✅ Mensagem enviada com sucesso.");
-    return res.sendStatus(200);
+    // 3) Envia pela Z‑API
+    console.log('📤 Enviando payload:', { phone, message: botReply });
+    await axios.post(zapiUrl, { phone, message: botReply }, { httpsAgent });
+    console.log('✅ Mensagem enviada com sucesso.');
 
-  } catch (erro) {
-    console.error("❌ Erro ao enviar resposta:", erro.response?.data || erro.message);
-    return res.sendStatus(500);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('❌ Erro ao enviar resposta:', err.response?.data || err.message);
+    res.sendStatus(500);
   }
 });
 
