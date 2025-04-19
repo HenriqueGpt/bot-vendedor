@@ -1,4 +1,4 @@
-// Versão: 1.1.2
+// Versão: 1.1.3
 require('dotenv').config();
 const express = require('express');
 const axios   = require('axios');
@@ -8,12 +8,12 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Configuração do Pool Postgres forçando IPv4
+// Configuração do Pool Postgres forçando IPv4 e desabilitando verificação de certificado
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: {
+    rejectUnauthorized: false
+  },
   lookup: (hostname, options, callback) =>
     dns.lookup(hostname, { family: 4 }, callback),
 });
@@ -49,17 +49,14 @@ app.post('/webhook', async (req, res) => {
     const { fromMe, text, isStatusReply, phone } = req.body;
     const mensagem = text?.message;
 
-    // Ignora status, mensagens do bot ou vazias
     if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
       return res.sendStatus(200);
     }
 
     console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
 
-    // Gera resposta
     const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
-    // Grava no banco
     const dbResult = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
@@ -67,7 +64,6 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${dbResult.rowCount} linha(s) inserida(s)`);
 
-    // Envia pela Z‑API
     const payload = { phone, message: respostaChatGPT };
     console.log("📤 Enviando payload:", payload);
     const config = clientToken
