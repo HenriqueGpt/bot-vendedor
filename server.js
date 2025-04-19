@@ -1,7 +1,7 @@
-// Versão: 1.0.9
+// server.js — Versão: 1.0.9
 require('dotenv').config();
 const express = require('express');
-const axios = require('axios');
+const axios   = require('axios');
 
 const app = express();
 app.use(express.json());
@@ -37,9 +37,9 @@ app.post('/webhook', async (req, res) => {
     const { fromMe, text, isStatusReply } = req.body;
     const mensagem = text?.message;
 
-    // 1) Filtrar:  
-    // • Ignorar status reply (resposta de entrega)  
-    // • Ignorar mensagens enviadas pelo próprio bot (fromMe=true)  
+    // 1) Filtrar:
+    // • Ignorar status reply (resposta de entrega)
+    // • Ignorar mensagens enviadas pelo próprio bot (fromMe=true)
     if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
       return res.sendStatus(200);
     }
@@ -71,6 +71,4 @@ app.post('/webhook', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
-});
+app.listen(PORT, () =>
