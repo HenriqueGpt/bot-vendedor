@@ -9,7 +9,7 @@ app.use(express.json());
 // Variáveis de ambiente
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
-const clientToken  = process.env.ZAPI_CLIENT_TOKEN;   // Account Security Token da Z‑API
+const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const url          = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
@@ -37,14 +37,10 @@ app.post('/webhook', async (req, res) => {
     const { fromMe, text, isStatusReply } = req.body;
     const mensagem = text?.message;
 
-    // 1) Filtrar:
-    // • Ignorar status reply (resposta de entrega)
-    // • Ignorar mensagens enviadas pelo próprio bot (fromMe=true)
     if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
       return res.sendStatus(200);
     }
 
-    // 2) Processar mensagem do usuário
     const numero = req.body.phone;
     console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
 
@@ -56,10 +52,10 @@ app.post('/webhook', async (req, res) => {
     };
     console.log("📤 Enviando payload:", payload);
 
-    // 3) Chamada à Z‑API (com header Client-Token se configurado)
     const config = clientToken
       ? { headers: { 'Client-Token': clientToken } }
       : {};
+
     const respostaApi = await axios.post(url, payload, config);
     console.log("✅ Mensagem enviada com sucesso. Resposta API:", respostaApi.data);
 
@@ -71,4 +67,6 @@ app.post('/webhook', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () =>
+app.listen(PORT, () => {
+  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
+});
