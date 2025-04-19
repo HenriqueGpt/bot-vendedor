@@ -13,12 +13,11 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// Variáveis Z‑API e OpenAI
+// Variáveis Z-API e OpenAI
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
-// ATENÇÃO: hífen ASCII normal em "z-api"
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
 // Extrai texto de estruturas de content
@@ -27,7 +26,7 @@ function extractMessageText(content) {
   if (Array.isArray(content)) {
     return content.map(seg => {
       if (typeof seg === 'string') return seg;
-      if (seg.text?.value)       return seg.text.value;
+      if (seg.text && typeof seg.text.value === 'string') return seg.text.value;
       if (typeof seg.content === 'string') return seg.content;
       return '';
     }).join('');
@@ -135,10 +134,14 @@ app.post('/webhook', async (req, res) => {
     const mensagem = text?.message?.trim();
     if (fromMe || isStatusReply || !mensagem) return res.sendStatus(200);
 
+    // Logs simplificados
     console.log(`← ${phone}: ${mensagem}`);
+
     const resposta = await obterResposta(mensagem, phone);
+
     console.log(`→ ${phone}: ${resposta}`);
 
+    // Envia via Z-API
     await axios.post(
       zapiUrl,
       { phone, message: resposta },
