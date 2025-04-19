@@ -7,20 +7,20 @@ const axios             = require('axios');
 const app = express();
 app.use(express.json());
 
-// Inicializa Supabase (server-side)
+// Inicializa Supabase (server-side)  
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
 
-// Variáveis de ambiente Z-API e OpenAI
+// Variáveis de ambiente Z-API e OpenAI  
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função utilitária para extrair texto de content arrays
+// Função utilitária para extrair texto de content arrays  
 function extractMessageText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -40,7 +40,7 @@ function extractMessageText(content) {
   return '';
 }
 
-// Função com memória em tempo real e captura correta da resposta
+// Função com memória em tempo real e seleção correta da resposta
 async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
   const headers    = {
@@ -49,16 +49,16 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     'OpenAI-Beta':   'assistants=v2'
   };
 
-  // 1) Busca thread existente no Supabase
+  // 1) Busca thread existente no Supabase  
   const { data, error } = await supabase
     .from('user_threads')
     .select('thread_id')
     .eq('phone', phone)
     .single();
   if (error && error.code !== 'PGRST116') throw error;
-  let threadId = data?.thread_id;
+  let threadId = data?.thread_id; :contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}
 
-  // 2) Se não existir, cria thread nova e persiste
+  // 2) Se não existir, cria thread nova e persiste  
   if (!threadId) {
     const threadResp = await axios.post(
       'https://api.openai.com/v1/threads',
@@ -71,14 +71,14 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     if (errInsert) throw errInsert;
   }
 
-  // 3) Envia a pergunta do usuário na mesma thread
+  // 3) Envia a pergunta do usuário na mesma thread  
   await axios.post(
     `https://api.openai.com/v1/threads/${threadId}/messages`,
     { role: 'user', content: pergunta },
     { headers }
   );
 
-  // 4) Dispara o run do assistente
+  // 4) Dispara o run do assistente  
   const runResp = await axios.post(
     `https://api.openai.com/v1/threads/${threadId}/runs`,
     { assistant_id: assistantId },
@@ -86,7 +86,7 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   );
   let { id: runId, status } = runResp.data;
 
-  // 5) Aguarda a execução completar
+  // 5) Aguarda a execução completar  
   while (status === 'queued' || status === 'in_progress') {
     await new Promise(r => setTimeout(r, 2000));
     const chk = await axios.get(
@@ -97,23 +97,21 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   }
   if (status !== 'completed') throw new Error('Erro ao executar o assistente.');
 
-  // 6) Recupera todas as mensagens da thread
+  // 6) Recupera todas as mensagens da thread  
   const msgsResp = await axios.get(
     `https://api.openai.com/v1/threads/${threadId}/messages`,
     { headers }
   );
   const msgs = msgsResp.data.data;
+  console.log("🔖 messagesResp.data.data:", msgs);
 
-  // 7) Filtra apenas mensagens de 'assistant' e pega a última
-  const assistantMsgs = msgs.filter(m => m.role === 'assistant');
-  const last = assistantMsgs[assistantMsgs.length - 1];
-
-  // 8) Extrai e retorna o texto
-  const resposta = last
-    ? extractMessageText(last.content)
+  // 7) Seleciona a primeira mensagem de 'assistant' (mais recente)  
+  const firstAssistant = msgs.find(m => m.role === 'assistant');
+  const resposta = firstAssistant
+    ? extractMessageText(firstAssistant.content)
     : '';
 
-  return resposta;
+  return resposta; :contentReference[oaicite:2]{index=2}&#8203;:contentReference[oaicite:3]{index=3}
 }
 
 app.post('/webhook', async (req, res) => {
