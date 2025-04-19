@@ -1,6 +1,6 @@
 // server.js — Versão: v1.2.3
 require('dotenv').config();
-// (Opcional em dev) desabilita verificação TLS em todo o Node.js
+// (Somente em dev) desabilita verificação de certificado TLS
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const express = require('express');
@@ -12,14 +12,15 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Agente HTTPS para OpenAI e Z‑API
+// Agente HTTPS que ignora validação de certificado
 const httpsAgent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
 
-// Pool Postgres (Transaction Pooler do Supabase, IPv4 + SSL)
+// Pool do Postgres (Supabase Transaction Pooler, IPv4 + SSL)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: true },
-  lookup: (host, opts, cb) => dns.lookup(host, { family: 4 }, cb),
+  lookup: (hostname, options, callback) =>
+    dns.lookup(hostname, { family: 4 }, callback),
 });
 
 // Credenciais da Z‑API e OpenAI
@@ -60,7 +61,7 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`📩 Mensagem recebida de: ${phone} | Conteúdo: ${msg}`);
 
-    // 1) ChatGPT
+    // 1) Resposta do ChatGPT
     const botReply = await obterRespostaChatGPT(msg);
 
     // 2) Persiste no banco
@@ -71,7 +72,7 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
 
-    // 3) Envia pela Z‑API com Client‑Token no header
+    // 3) Envia pela Z‑API com header Client‑Token
     console.log('📤 Enviando payload:', { phone, message: botReply });
     await axios.post(
       zapiUrl,
@@ -79,7 +80,7 @@ app.post('/webhook', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Client-Token': clientToken    // header obrigatório para Account Security Token :contentReference[oaicite:1]{index=1}
+          'Client-Token': clientToken
         },
         httpsAgent
       }
