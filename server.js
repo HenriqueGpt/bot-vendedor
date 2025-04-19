@@ -13,14 +13,14 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// Variáveis de ambiente Z-API e OpenAI
+// Variáveis Z‑API e OpenAI
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Extrai texto de content arrays
+// Utilitário para extrair texto de estruturas de content
 function extractMessageText(content) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
@@ -34,47 +34,95 @@ function extractMessageText(content) {
   return '';
 }
 
-// Função principal: mantém histórico e obtém resposta
+// Função principal: gerencia histórico, nome, data e avaliação
 async function obterResposta(pergunta, phone) {
   const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
-  const headers    = {
+  const headers     = {
     'Content-Type':  'application/json',
     'Authorization': `Bearer ${openaiApiKey}`,
     'OpenAI-Beta':   'assistants=v2'
   };
 
-  // 1) Recupera ou cria threadId
-  let { data, error } = await supabase
-    .from('user_threads').select('thread_id').eq('phone', phone).single();
-  if (error && error.code !== 'PGRST116') throw error;
+  // 1) Recupera registro do usuário
+  let { data: user, error } = await supabase
+    .from('user_threads')
+    .select('*')
+    .eq('phone', phone)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error; :contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}
 
-  let threadId = data?.thread_id;
-  if (!threadId) {
-    threadId = (await axios.post('https://api.openai.com/v1/threads', {}, { headers })).data.id;
-    await supabase.from('user_threads').insert({ phone, thread_id: threadId });
+  // 2) Primeiro contato: grava nome e responde saudação
+  if (!user || !user.name) {
+    if (user) {
+      await supabase
+        .from('user_threads')
+        .update({ name: pergunta })
+        .eq('phone', phone);
+    } else {
+      await supabase
+        .from('user_threads')
+        .insert({ phone, name: pergunta });
+    }
+    return `Prazer em conhecê-lo, ${pergunta}! Como posso ajudar você hoje?`;
   }
 
-  // 2) Envia pergunta
-  await axios.post(`https://api.openai.com/v1/threads/${threadId}/messages`,
-    { role: 'user', content: pergunta }, { headers }
+  // 3) Captura avaliação final: “AVALIACAO: X”
+  if (/^AVALIACAO:\s*\d+/.test(pergunta.toUpperCase())) {
+    const nota = parseInt(pergunta.split(':')[1], 10);
+    await supabase
+      .from('user_threads')
+      .update({ rating: nota })
+      .eq('phone', phone);
+    return `Obrigado pela avaliação de ${nota} estrelas!`;
+  }
+
+  // 4) Atualiza data da última conversa
+  await supabase
+    .from('user_threads')
+    .update({ last_conversation: new Date().toISOString() })
+    .eq('phone', phone);
+
+  // 5) Thread per user: cria ou recupera threadId
+  let threadId = user.thread_id;
+  if (!threadId) {
+    const threadResp = await axios.post(
+      'https://api.openai.com/v1/threads',
+      {}, { headers }
+    );
+    threadId = threadResp.data.id;
+    await supabase
+      .from('user_threads')
+      .update({ thread_id: threadId })
+      .eq('phone', phone);
+  }
+
+  // 6) Envia pergunta ao Assistente
+  await axios.post(
+    `https://api.openai.com/v1/threads/${threadId}/messages`,
+    { role: 'user', content: pergunta },
+    { headers }
   );
 
-  // 3) Gera resposta
+  // 7) Executa o run
   let run = await axios.post(
     `https://api.openai.com/v1/threads/${threadId}/runs`,
-    { assistant_id: assistantId }, { headers }
+    { assistant_id: assistantId },
+    { headers }
   );
   let { id: runId, status } = run.data;
-
   while (status !== 'completed') {
     await new Promise(r => setTimeout(r, 1000));
-    run = await axios.get(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, { headers });
+    run = await axios.get(
+      `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
+      { headers }
+    );
     status = run.data.status;
   }
 
-  // 4) Recupera mensagens e extrai última do assistant
+  // 8) Recupera mensagens e extrai última do assistant
   const msgs = (await axios.get(
-    `https://api.openai.com/v1/threads/${threadId}/messages`, { headers }
+    `https://api.openai.com/v1/threads/${threadId}/messages`,
+    { headers }
   )).data.data;
   const last = msgs.filter(m => m.role === 'assistant').pop();
   return last ? extractMessageText(last.content) : '';
@@ -86,14 +134,14 @@ app.post('/webhook', async (req, res) => {
     const mensagem = text?.message?.trim();
     if (fromMe || isStatusReply || !mensagem) return res.sendStatus(200);
 
-    // Log simplificado: entrada e saída
+    // Logs simplificados
     console.log(`← ${phone}: ${mensagem}`);
 
     const resposta = await obterResposta(mensagem, phone);
 
     console.log(`→ ${phone}: ${resposta}`);
 
-    // Envio via Z-API
+    // Envia via Z-API
     await axios.post(
       zapiUrl,
       { phone, message: resposta },
@@ -108,6 +156,4 @@ app.post('/webhook', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Bot rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Bot rodando na porta ${PORT}`));
