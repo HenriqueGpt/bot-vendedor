@@ -13,7 +13,7 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// Variáveis Z-API e OpenAI
+// Variáveis Z‑API e OpenAI
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
@@ -26,7 +26,7 @@ function extractMessageText(content) {
   if (Array.isArray(content)) {
     return content.map(seg => {
       if (typeof seg === 'string') return seg;
-      if (seg.text && typeof seg.text.value === 'string') return seg.text.value;
+      if (seg.text?.value)       return seg.text.value;
       if (typeof seg.content === 'string') return seg.content;
       return '';
     }).join('');
@@ -82,12 +82,11 @@ async function obterResposta(pergunta, phone) {
     .update({ last_conversation: new Date().toISOString() })
     .eq('phone', phone);
 
-  // 5) Thread per user: cria ou recupera threadId
+  // 5) Thread por usuário: cria ou recupera threadId
   let threadId = user.thread_id;
   if (!threadId) {
     const threadResp = await axios.post(
-      'https://api.openai.com/v1/threads',
-      {}, { headers }
+      'https://api.openai.com/v1/threads', {}, { headers }
     );
     threadId = threadResp.data.id;
     await supabase
@@ -119,12 +118,13 @@ async function obterResposta(pergunta, phone) {
     status = run.data.status;
   }
 
-  // 8) Recupera mensagens e extrai última do assistant
+  // 8) Recupera mensagens e extrai a ÚLTIMA do assistant
   const msgs = (await axios.get(
     `https://api.openai.com/v1/threads/${threadId}/messages`,
     { headers }
   )).data.data;
-  const last = msgs.filter(m => m.role === 'assistant').pop();
+  const assistantMsgs = msgs.filter(m => m.role === 'assistant');
+  const last = assistantMsgs[assistantMsgs.length - 1];
   return last ? extractMessageText(last.content) : '';
 }
 
@@ -134,14 +134,10 @@ app.post('/webhook', async (req, res) => {
     const mensagem = text?.message?.trim();
     if (fromMe || isStatusReply || !mensagem) return res.sendStatus(200);
 
-    // Logs simplificados
     console.log(`← ${phone}: ${mensagem}`);
-
     const resposta = await obterResposta(mensagem, phone);
-
     console.log(`→ ${phone}: ${resposta}`);
 
-    // Envia via Z-API
     await axios.post(
       zapiUrl,
       { phone, message: resposta },
