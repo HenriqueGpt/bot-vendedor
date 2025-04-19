@@ -20,7 +20,7 @@ const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função com memória em tempo real e debug
+// Função com memória em tempo real e correção na captura da resposta
 async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
   const headers    = {
@@ -78,19 +78,23 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   }
   if (status !== 'completed') throw new Error('Erro ao executar o assistente.');
 
-  // 6) Lê os outputs do run e faz debug
+  // 6) Lê o run final e adiciona debug
   const runFinal = await axios.get(
     `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
     { headers }
   );
-  const outputs = runFinal.data.outputs;
+  console.log("🔖 runFinal.data:", runFinal.data);
 
-  console.log("🔖 threadId:", threadId);
-  console.log("🔖 runId:", runId);
-  console.log("🔖 outputs do run:", outputs);
+  // 7) Extrai a resposta correta de runFinal.data.messages
+  const msgs = runFinal.data.messages || [];
+  const assistantMsg = msgs.slice().reverse().find(m => m.role === 'assistant');
+  const respostaAssistente = assistantMsg
+    ? (typeof assistantMsg.content === 'string'
+        ? assistantMsg.content
+        : assistantMsg.content.text || '')
+    : '';
 
-  // 7) Retorna a mensagem gerada
-  return outputs[0].message.content;
+  return respostaAssistente;
 }
 
 app.post('/webhook', async (req, res) => {
