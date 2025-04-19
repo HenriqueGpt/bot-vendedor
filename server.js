@@ -1,4 +1,3 @@
-// server.js — Versão: 1.0.9
 require('dotenv').config();
 const express = require('express');
 const axios   = require('axios');
@@ -13,55 +12,77 @@ const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const url          = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função para gerar resposta via ChatGPT
-async function obterRespostaChatGPT(pergunta) {
+// Função para usar o Assistente personalizado
+async function obterRespostaAssistente(pergunta) {
+  const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${openaiApiKey}`
+    'Authorization': `Bearer ${openaiApiKey}`,
+    'OpenAI-Beta': 'assistants=v2'
   };
-  const dados = {
-    model: 'gpt-3.5-turbo',
-    messages: [{ role: 'user', content: pergunta }],
-    temperature: 0.7,
-  };
-  const resposta = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    dados,
+
+  // 1) Cria uma thread nova
+  const threadResp = await axios.post('https://api.openai.com/v1/threads', {}, { headers });
+  const threadId = threadResp.data.id;
+
+  // 2) Envia a mensagem do usuário
+  await axios.post(
+    `https://api.openai.com/v1/threads/${threadId}/messages`,
+    { role: 'user', content: pergunta },
     { headers }
   );
-  return resposta.data.choices[0].message.content;
+
+  // 3) Executa o Assistente
+  const runResp = await axios.post(
+    `https://api.openai.com/v1/threads/${threadId}/runs`,
+    { assistant_id: assistantId },
+    { headers }
+  );
+
+  let { id: runId, status } = runResp.data;
+  // 4) Aguarda resposta ficar pronta
+  while (status === 'queued' || status === 'in_progress') {
+    await new Promise(r => setTimeout(r, 2000));
+    const check = await axios.get(
+      `https://api.openai.com/v1/threads/${threadId}/runs/${runId}`,
+      { headers }
+    );
+    status = check.data.status;
+  }
+  if (status !== 'completed') throw new Error('Erro ao executar o assistente.');
+
+  // 5) Lê a resposta final
+  const messagesResp = await axios.get(
+    `https://api.openai.com/v1/threads/${threadId}/messages`,
+    { headers }
+  );
+  return messagesResp.data.data[0].content[0].text.value;
 }
 
 app.post('/webhook', async (req, res) => {
   try {
-    const { fromMe, text, isStatusReply } = req.body;
+    const { fromMe, text, isStatusReply, phone } = req.body;
     const mensagem = text?.message;
-
-    if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
+    if (isStatusReply || fromMe || !mensagem || !mensagem.trim()) {
       return res.sendStatus(200);
     }
 
-    const numero = req.body.phone;
-    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
+    console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
+    // Chama agora o Assistente em vez do GPT-3.5 direto
+    const resposta = await obterRespostaAssistente(mensagem);
 
-    const respostaChatGPT = await obterRespostaChatGPT(mensagem);
-
-    const payload = {
-      phone: numero,
-      message: respostaChatGPT,
-    };
-    console.log("📤 Enviando payload:", payload);
-
-    const config = clientToken
+    const payload = { phone, message: resposta };
+    const config  = clientToken
       ? { headers: { 'Client-Token': clientToken } }
       : {};
 
-    const respostaApi = await axios.post(url, payload, config);
-    console.log("✅ Mensagem enviada com sucesso. Resposta API:", respostaApi.data);
+    console.log("📤 Enviando payload:", payload);
+    const respApi = await axios.post(url, payload, config);
+    console.log("✅ Mensagem enviada:", respApi.data);
 
     return res.sendStatus(200);
   } catch (erro) {
-    console.error("❌ Erro ao enviar resposta:", erro.response?.data || erro.message);
+    console.error("❌ Erro ao processar webhook:", erro.response?.data || erro.message);
     return res.sendStatus(500);
   }
 });
