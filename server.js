@@ -1,14 +1,21 @@
-// Versão: 1.1.3
+// Versão: 1.1.4
 require('dotenv').config();
+// força aceitar certificados self‑signed em todo o Node.js
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const express = require('express');
 const axios   = require('axios');
+const https   = require('https');
 const dns     = require('dns');
 const { Pool } = require('pg');
 
 const app = express();
 app.use(express.json());
 
-// Configuração do Pool Postgres forçando IPv4 e desabilitando verificação de certificado
+// Agente HTTPS que ignora verificação de certificado
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
+// Configuração do Pool Postgres forçando IPv4
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -39,7 +46,7 @@ async function obterRespostaChatGPT(pergunta) {
   const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     dados,
-    { headers }
+    { headers, httpsAgent }
   );
   return resp.data.choices[0].message.content;
 }
@@ -55,8 +62,10 @@ app.post('/webhook', async (req, res) => {
 
     console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
 
+    // 1) Resposta do ChatGPT
     const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
+    // 2) Grava no banco
     const dbResult = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
@@ -64,11 +73,13 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${dbResult.rowCount} linha(s) inserida(s)`);
 
+    // 3) Envia pela Z‑API (com Client‑Token e agente HTTPS)
     const payload = { phone, message: respostaChatGPT };
     console.log("📤 Enviando payload:", payload);
-    const config = clientToken
-      ? { headers: { 'Client-Token': clientToken } }
-      : {};
+    const config = {
+      ...(clientToken && { headers: { 'Client-Token': clientToken } }),
+      httpsAgent
+    };
     const respostaApi = await axios.post(url, payload, config);
     console.log("✅ Mensagem enviada com sucesso. Resposta API:", respostaApi.data);
 
