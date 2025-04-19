@@ -1,104 +1,76 @@
+// Versão: 1.0.9
 require('dotenv').config();
-// Desabilita verificação de certificado TLS (apenas dev)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const express = require('express');
-const axios   = require('axios');
-const https   = require('https');
-const dns     = require('dns');
-const { Pool } = require('pg');
-
-const {
-  DATABASE_URL,
-  ZAPI_INSTANCE_ID,
-  ZAPI_TOKEN,
-  ZAPI_CLIENT_TOKEN,
-  OPENAI_API_KEY,
-  PORT = 10000
-} = process.env;
-
-console.log('🚀 Iniciando Bot v1.3.2');
-console.log('📦 DATABASE_URL:', DATABASE_URL);
-console.log('🛠️ ZAPI_INSTANCE_ID:', ZAPI_INSTANCE_ID);
-console.log('🛠️ ZAPI_TOKEN:', ZAPI_TOKEN);
-console.log('🛠️ ZAPI_CLIENT_TOKEN:', ZAPI_CLIENT_TOKEN);
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
 
-// HTTPS Agent que ignora certificado
-const httpsAgent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
+// Variáveis de ambiente
+const instanceId   = process.env.ZAPI_INSTANCE_ID;
+const token        = process.env.ZAPI_TOKEN;
+const clientToken  = process.env.ZAPI_CLIENT_TOKEN;   // Account Security Token da Z‑API
+const openaiApiKey = process.env.OPENAI_API_KEY;
+const url          = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Pool PostgreSQL com channelBinding desabilitado
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  lookup: (host, opts, cb) => dns.lookup(host, { family: 4 }, cb),
-  channelBinding: 'disable'
-});
-
-// URL dinâmica de envio de texto na Z‑API
-const zapiUrl = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
-console.log('🛠️ zapiUrl =', zapiUrl);
-
+// Função para gerar resposta via ChatGPT
 async function obterRespostaChatGPT(pergunta) {
-  const resp = await axios.post(
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${openaiApiKey}`
+  };
+  const dados = {
+    model: 'gpt-3.5-turbo',
+    messages: [{ role: 'user', content: pergunta }],
+    temperature: 0.7,
+  };
+  const resposta = await axios.post(
     'https://api.openai.com/v1/chat/completions',
-    {
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: pergunta }],
-      temperature: 0.7
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENAI_API_KEY}`
-      },
-      httpsAgent
-    }
+    dados,
+    { headers }
   );
-  return resp.data.choices[0].message.content;
+  return resposta.data.choices[0].message.content;
 }
 
 app.post('/webhook', async (req, res) => {
   try {
-    const { fromMe, isStatusReply, text, phone } = req.body;
-    const msg = text?.message?.trim();
-    if (fromMe || isStatusReply || !msg) return res.sendStatus(200);
+    const { fromMe, text, isStatusReply } = req.body;
+    const mensagem = text?.message;
 
-    console.log(`📩 Mensagem recebida de: ${phone} | Conteúdo: ${msg}`);
+    // 1) Filtrar:  
+    // • Ignorar status reply (resposta de entrega)  
+    // • Ignorar mensagens enviadas pelo próprio bot (fromMe=true)  
+    if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
+      return res.sendStatus(200);
+    }
 
-    const botReply = await obterRespostaChatGPT(msg);
+    // 2) Processar mensagem do usuário
+    const numero = req.body.phone;
+    console.log("📩 Mensagem recebida de:", numero, "| Conteúdo:", mensagem);
 
-    // Salva no banco
-    await pool.query(
-      `INSERT INTO public.messages(phone, user_message, bot_response) VALUES($1, $2, $3)`,
-      [phone, msg, botReply]
-    );
-    console.log('💾 Mensagem salva no banco');
+    const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
-    // Envia via Z-API
-    console.log('📤 Enviando payload via Z‑API:', { phone, message: botReply });
-    const zapiResp = await axios.post(
-      zapiUrl,
-      { phone, message: botReply },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Client-Token': ZAPI_CLIENT_TOKEN
-        },
-        httpsAgent
-      }
-    );
-    console.log('✅ Z-API response:', zapiResp.data);
+    const payload = {
+      phone: numero,
+      message: respostaChatGPT,
+    };
+    console.log("📤 Enviando payload:", payload);
 
-    res.sendStatus(200);
-  } catch (err) {
-    console.error('❌ Erro ao enviar resposta:', err.response?.data ?? err.message);
-    res.sendStatus(err.response?.status || 500);
+    // 3) Chamada à Z‑API (com header Client-Token se configurado)
+    const config = clientToken
+      ? { headers: { 'Client-Token': clientToken } }
+      : {};
+    const respostaApi = await axios.post(url, payload, config);
+    console.log("✅ Mensagem enviada com sucesso. Resposta API:", respostaApi.data);
+
+    return res.sendStatus(200);
+  } catch (erro) {
+    console.error("❌ Erro ao enviar resposta:", erro.response?.data || erro.message);
+    return res.sendStatus(500);
   }
 });
 
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 Bot rodando na porta ${PORT}`);
+  console.log(`🚀 Bot vendedor rodando na porta ${PORT}`);
 });
