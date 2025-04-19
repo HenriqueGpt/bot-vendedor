@@ -8,25 +8,24 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Configuração do banco de dados com lookup forçado para IPv4
+// Configuração do Pool Postgres forçando IPv4
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production'
     ? { rejectUnauthorized: false }
     : false,
-  // força resolução IPv4 para evitar ENETUNREACH em IPv6
   lookup: (hostname, options, callback) =>
     dns.lookup(hostname, { family: 4 }, callback),
 });
 
-// Variáveis de ambiente da Z‑API e OpenAI
+// Variáveis de ambiente Z‑API e OpenAI
 const instanceId   = process.env.ZAPI_INSTANCE_ID;
 const token        = process.env.ZAPI_TOKEN;
 const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const url          = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função para obter a resposta do ChatGPT
+// Função ChatGPT
 async function obterRespostaChatGPT(pergunta) {
   const headers = {
     'Content-Type': 'application/json',
@@ -50,17 +49,17 @@ app.post('/webhook', async (req, res) => {
     const { fromMe, text, isStatusReply, phone } = req.body;
     const mensagem = text?.message;
 
-    // Filtra: sem texto, status reply ou mensagens do próprio bot
+    // Ignora status, mensagens do bot ou vazias
     if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
       return res.sendStatus(200);
     }
 
     console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
 
-    // Gera resposta do ChatGPT
+    // Gera resposta
     const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
-    // Grava no banco e loga confirmação
+    // Grava no banco
     const dbResult = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
@@ -68,7 +67,7 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${dbResult.rowCount} linha(s) inserida(s)`);
 
-    // Envia via Z‑API
+    // Envia pela Z‑API
     const payload = { phone, message: respostaChatGPT };
     console.log("📤 Enviando payload:", payload);
     const config = clientToken
