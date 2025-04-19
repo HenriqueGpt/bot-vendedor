@@ -20,13 +20,33 @@ const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
+// Função utilitária para extrair texto de content arrays
+function extractMessageText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map(segment => {
+      if (typeof segment === 'string') {
+        return segment;
+      }
+      if (segment.text && typeof segment.text.value === 'string') {
+        return segment.text.value;
+      }
+      if (typeof segment.content === 'string') {
+        return segment.content;
+      }
+      return '';
+    }).join('');
+  }
+  return '';
+}
+
 // Função com memória em tempo real e captura correta da resposta
 async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
   const headers    = {
     'Content-Type':  'application/json',
     'Authorization': `Bearer ${openaiApiKey}`,
-    'OpenAI-Beta':   'assistants=v2'   // corrige o hífen para ASCII válido :contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}
+    'OpenAI-Beta':   'assistants=v2'
   };
 
   // 1) Busca thread existente no Supabase
@@ -45,7 +65,6 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
       {}, { headers }
     );
     threadId = threadResp.data.id;
-
     const { error: errInsert } = await supabase
       .from('user_threads')
       .insert({ phone, thread_id: threadId });
@@ -83,23 +102,16 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
     `https://api.openai.com/v1/threads/${threadId}/messages`,
     { headers }
   );
-  console.log("🔖 messagesResp.data.data:", msgsResp.data.data);
-
   const msgs = msgsResp.data.data;
+
   // 7) Filtra apenas mensagens de 'assistant' e pega a última
   const assistantMsgs = msgs.filter(m => m.role === 'assistant');
   const last = assistantMsgs[assistantMsgs.length - 1];
-  let resposta = '';
 
-  if (last) {
-    if (typeof last.content === 'string') {
-      resposta = last.content;
-    } else if (Array.isArray(last.content) && last.content[0]?.text?.value) {
-      resposta = last.content[0].text.value;
-    } else if (last.content?.text?.value) {
-      resposta = last.content.text.value;
-    }
-  }
+  // 8) Extrai e retorna o texto
+  const resposta = last
+    ? extractMessageText(last.content)
+    : '';
 
   return resposta;
 }
