@@ -1,18 +1,22 @@
-// Versão: 1.1.1
+// Versão: 1.1.2
 require('dotenv').config();
 const express = require('express');
 const axios   = require('axios');
+const dns     = require('dns');
 const { Pool } = require('pg');
 
 const app = express();
 app.use(express.json());
 
-// Configuração do banco de dados
+// Configuração do banco de dados com lookup forçado para IPv4
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production'
     ? { rejectUnauthorized: false }
     : false,
+  // força resolução IPv4 para evitar ENETUNREACH em IPv6
+  lookup: (hostname, options, callback) =>
+    dns.lookup(hostname, { family: 4 }, callback),
 });
 
 // Variáveis de ambiente da Z‑API e OpenAI
@@ -46,17 +50,17 @@ app.post('/webhook', async (req, res) => {
     const { fromMe, text, isStatusReply, phone } = req.body;
     const mensagem = text?.message;
 
-    // 1) Filtrar: sem texto, status reply ou vindo do próprio bot
+    // Filtra: sem texto, status reply ou mensagens do próprio bot
     if (isStatusReply || fromMe || !mensagem || mensagem.trim() === '') {
       return res.sendStatus(200);
     }
 
     console.log("📩 Mensagem recebida de:", phone, "| Conteúdo:", mensagem);
 
-    // 2) Obter resposta do ChatGPT
+    // Gera resposta do ChatGPT
     const respostaChatGPT = await obterRespostaChatGPT(mensagem);
 
-    // 3) Gravar interação no banco
+    // Grava no banco e loga confirmação
     const dbResult = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
@@ -64,7 +68,7 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${dbResult.rowCount} linha(s) inserida(s)`);
 
-    // 4) Enviar via Z‑API
+    // Envia via Z‑API
     const payload = { phone, message: respostaChatGPT };
     console.log("📤 Enviando payload:", payload);
     const config = clientToken
