@@ -20,13 +20,13 @@ const clientToken  = process.env.ZAPI_CLIENT_TOKEN;
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const zapiUrl      = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
-// Função com memória em tempo real e correção na captura da resposta
+// Função com memória em tempo real e captura correta da resposta
 async function obterRespostaAssistenteComMemoria(pergunta, phone) {
   const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
   const headers    = {
     'Content-Type':  'application/json',
     'Authorization': `Bearer ${openaiApiKey}`,
-    'OpenAI‑Beta':   'assistants=v2'
+    'OpenAI-Beta':   'assistants=v2'   // corrige o hífen para ASCII válido :contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}
   };
 
   // 1) Busca thread existente no Supabase
@@ -45,6 +45,7 @@ async function obterRespostaAssistenteComMemoria(pergunta, phone) {
       {}, { headers }
     );
     threadId = threadResp.data.id;
+
     const { error: errInsert } = await supabase
       .from('user_threads')
       .insert({ phone, thread_id: threadId });
