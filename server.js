@@ -19,7 +19,9 @@ const {
 
 console.log('🚀 Iniciando Bot v1.3.2');
 console.log('📦 DATABASE_URL:', DATABASE_URL);
-console.log('🔑 ZAPI_CLIENT_TOKEN:', ZAPI_CLIENT_TOKEN);
+console.log('🛠️ ZAPI_INSTANCE_ID:', ZAPI_INSTANCE_ID);
+console.log('🛠️ ZAPI_TOKEN:', ZAPI_TOKEN);
+console.log('🛠️ ZAPI_CLIENT_TOKEN:', ZAPI_CLIENT_TOKEN);
 
 const app = express();
 app.use(express.json());
@@ -35,8 +37,9 @@ const pool = new Pool({
   channelBinding: 'disable'
 });
 
-// URL da Z-API (endpoint correto para enviar texto)
+// URL dinâmica de envio de texto na Z‑API
 const zapiUrl = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
+console.log('🛠️ zapiUrl =', zapiUrl);
 
 async function obterRespostaChatGPT(pergunta) {
   const resp = await axios.post(
@@ -49,7 +52,7 @@ async function obterRespostaChatGPT(pergunta) {
     {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
+        Authorization: `Bearer ${OPENAI_API_KEY}`
       },
       httpsAgent
     }
@@ -75,7 +78,7 @@ app.post('/webhook', async (req, res) => {
     console.log('💾 Mensagem salva no banco');
 
     // Envia via Z-API
-    console.log('📤 Enviando payload:', { phone, message: botReply });
+    console.log('📤 Enviando payload via Z‑API:', { phone, message: botReply });
     const zapiResp = await axios.post(
       zapiUrl,
       { phone, message: botReply },
@@ -88,7 +91,6 @@ app.post('/webhook', async (req, res) => {
       }
     );
     console.log('✅ Z-API response:', zapiResp.data);
-    console.log('✅ Mensagem enviada com sucesso.');
 
     res.sendStatus(200);
   } catch (err) {
