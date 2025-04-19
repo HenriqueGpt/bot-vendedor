@@ -1,4 +1,5 @@
 require('dotenv').config();
+// Desabilita verificação de certificado TLS (apenas dev)
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const express = require('express');
@@ -34,8 +35,8 @@ const pool = new Pool({
   channelBinding: 'disable'
 });
 
-// URL da Z‑API (endpoint correto)
-const zapiUrl = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/sendText`;
+// URL da Z-API (endpoint correto para enviar texto)
+const zapiUrl = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
 
 async function obterRespostaChatGPT(pergunta) {
   const resp = await axios.post(
@@ -66,12 +67,14 @@ app.post('/webhook', async (req, res) => {
 
     const botReply = await obterRespostaChatGPT(msg);
 
-    const { rowCount } = await pool.query(
+    // Salva no banco
+    await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response) VALUES($1, $2, $3)`,
       [phone, msg, botReply]
     );
-    console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
+    console.log('💾 Mensagem salva no banco');
 
+    // Envia via Z-API
     console.log('📤 Enviando payload:', { phone, message: botReply });
     const zapiResp = await axios.post(
       zapiUrl,
@@ -84,7 +87,7 @@ app.post('/webhook', async (req, res) => {
         httpsAgent
       }
     );
-    console.log('✅ Z‑API response:', zapiResp.data);
+    console.log('✅ Z-API response:', zapiResp.data);
     console.log('✅ Mensagem enviada com sucesso.');
 
     res.sendStatus(200);
