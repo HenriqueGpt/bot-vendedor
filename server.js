@@ -1,6 +1,6 @@
-// server.js — Versão: v1.2.2
+// server.js — Versão: v1.2.3
 require('dotenv').config();
-// Desabilita verificação de certificado em todo o Node.js (apenas em dev)
+// (Opcional em dev) desabilita verificação TLS em todo o Node.js
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const express = require('express');
@@ -12,25 +12,27 @@ const { Pool } = require('pg');
 const app = express();
 app.use(express.json());
 
-// Agente HTTPS que ignora validação de certificado
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+// Agente HTTPS para OpenAI e Z‑API
+const httpsAgent = new https.Agent({ keepAlive: true, rejectUnauthorized: false });
 
-// Pool Postgres (Supabase Transaction Pooler) forçando IPv4 e ignorando verificação SSL
+// Pool Postgres (Transaction Pooler do Supabase, IPv4 + SSL)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  lookup: (hostname, options, callback) =>
-    dns.lookup(hostname, { family: 4 }, callback),
+  ssl: { rejectUnauthorized: true },
+  lookup: (host, opts, cb) => dns.lookup(host, { family: 4 }, cb),
 });
 
+// Credenciais da Z‑API e OpenAI
 const {
   ZAPI_INSTANCE_ID: instanceId,
   ZAPI_TOKEN: token,
+  ZAPI_CLIENT_TOKEN: clientToken,
   OPENAI_API_KEY: openaiApiKey
 } = process.env;
 
 const zapiUrl = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
+// Gera resposta via ChatGPT
 async function obterRespostaChatGPT(pergunta) {
   const resp = await axios.post(
     'https://api.openai.com/v1/chat/completions',
@@ -42,7 +44,7 @@ async function obterRespostaChatGPT(pergunta) {
     {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'Authorization': `Bearer ${openaiApiKey}`
       },
       httpsAgent
     }
@@ -61,7 +63,7 @@ app.post('/webhook', async (req, res) => {
     // 1) ChatGPT
     const botReply = await obterRespostaChatGPT(msg);
 
-    // 2) Grava no banco
+    // 2) Persiste no banco
     const { rowCount } = await pool.query(
       `INSERT INTO public.messages(phone, user_message, bot_response)
        VALUES($1, $2, $3)`,
@@ -69,12 +71,18 @@ app.post('/webhook', async (req, res) => {
     );
     console.log(`💾 Gravado no banco: ${rowCount} linha(s)`);
 
-    // 3) Envia pela Z‑API, usando o mesmo agente HTTPS
+    // 3) Envia pela Z‑API com Client‑Token no header
     console.log('📤 Enviando payload:', { phone, message: botReply });
     await axios.post(
       zapiUrl,
       { phone, message: botReply },
-      { httpsAgent }
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Client-Token': clientToken    // header obrigatório para Account Security Token :contentReference[oaicite:1]{index=1}
+        },
+        httpsAgent
+      }
     );
     console.log('✅ Mensagem enviada com sucesso.');
 
