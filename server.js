@@ -1,8 +1,7 @@
 
 require('dotenv').config();
-
 const express = require('express');
-const axios   = require('axios');
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
@@ -85,48 +84,42 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`← ${phone}: ${mensagem}`);
 
-    // Inicializa buffer (apenas em memória)
     if (!conversations[phone]) {
       conversations[phone] = [];
     }
 
     if (mensagem === '099') {
-      // Mensagem de finalização (não salva mais)
       await axios.post(
         zapiUrl,
         { phone, message: 'Conversa encerrada.' },
         clientToken ? { headers: { 'Client-Token': clientToken } } : {}
       );
-
       delete conversations[phone];
       return res.sendStatus(200);
     }
 
-    // Gera resposta com assistente
     const resposta = await callAssistant(mensagem);
 
-    // Salva no buffer
     conversations[phone].push({ user: mensagem, bot: resposta });
 
     console.log(`→ ${phone}: ${resposta}`);
 
-    // Envia para o WhatsApp via Z-API
     await axios.post(
       zapiUrl,
       { phone, message: resposta },
       clientToken ? { headers: { 'Client-Token': clientToken } } : {}
     );
 
-    // Envia também para o n8n
+    // Enviar para o n8n
     try {
-      await axios.post("https://hgptii.app.n8n.cloud/webhook/a889d2ae-2159-402f-b326-5f61e90f602e/chat", {
+      await axios.post("https://hgptii.app.n8n.cloud/webhook/chat", {
         phone,
         mensagem,
         resposta,
         data: new Date().toISOString()
       });
-    } catch (e) {
-      console.warn("⚠️ Falha ao registrar no n8n:", e.message);
+    } catch (err) {
+      console.warn("⚠️ Falha ao registrar no n8n:", err.response?.status, err.response?.data || err.message);
     }
 
     return res.sendStatus(200);
