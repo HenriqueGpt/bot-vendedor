@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 
 const express = require('express');
@@ -108,11 +109,25 @@ app.post('/webhook', async (req, res) => {
     conversations[phone].push({ user: mensagem, bot: resposta });
 
     console.log(`→ ${phone}: ${resposta}`);
+
+    // Envia para o WhatsApp via Z-API
     await axios.post(
       zapiUrl,
       { phone, message: resposta },
       clientToken ? { headers: { 'Client-Token': clientToken } } : {}
     );
+
+    // Envia também para o n8n
+    try {
+      await axios.post("https://hgptii.app.n8n.cloud/webhook/a889d2ae-2159-402f-b326-5f61e90f602e/chat", {
+        phone,
+        mensagem,
+        resposta,
+        data: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn("⚠️ Falha ao registrar no n8n:", e.message);
+    }
 
     return res.sendStatus(200);
   } catch (err) {
