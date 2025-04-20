@@ -1,99 +1,125 @@
-// server.js v1.6.2 - Com seu Assistente OpenAI (asst_KNliRLfxJ8RHSqyULqDCrW45)
-const express = require("express");
-const axios = require("axios");
-const { OpenAI } = require("openai");
-require("dotenv").config();
+require('dotenv').config();
+
+const express = require('express');
+const axios   = require('axios');
 
 const app = express();
-const PORT = 10000;
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Configuração Z-API
-const ZAPI_INSTANCE_ID = process.env.ZAPI_INSTANCE_ID;
-const ZAPI_TOKEN = process.env.ZAPI_TOKEN;
-const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN;
-
-const zapiUrl = `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`;
-
-// ID do seu assistente fixado
-const ASSISTANT_ID = "asst_KNliRLfxJ8RHSqyULqDCrW45";
-
 app.use(express.json());
 
-app.post("/webhook", async (req, res) => {
+// In-memory buffer de conversas
+const conversations = {};
+
+// Z-API endpoint e tokens
+const zapiUrl     = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}` +
+                    `/token/${process.env.ZAPI_TOKEN}/send-text`;
+const clientToken = process.env.ZAPI_CLIENT_TOKEN;
+
+// Assistente OpenAI
+const assistantId = 'asst_KNliRLfxJ8RHSqyULqDCrW45';
+const openaiKey   = process.env.OPENAI_API_KEY;
+
+// Extrai texto da resposta do assistente
+function extractMessageText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map(seg => {
+      if (typeof seg === 'string') return seg;
+      if (seg.text?.value)       return seg.text.value;
+      if (typeof seg.content === 'string') return seg.content;
+      return '';
+    }).join('');
+  }
+  return '';
+}
+
+// Chama o Assistente OpenAI
+async function callAssistant(question) {
+  const headers = {
+    'Content-Type':  'application/json',
+    'Authorization': `Bearer ${openaiKey}`,
+    'OpenAI-Beta':   'assistants=v2'
+  };
+
+  const { data: thread } = await axios.post(
+    'https://api.openai.com/v1/threads', {}, { headers }
+  );
+
+  await axios.post(
+    `https://api.openai.com/v1/threads/${thread.id}/messages`,
+    { role: 'user', content: question },
+    { headers }
+  );
+
+  let { data: run } = await axios.post(
+    `https://api.openai.com/v1/threads/${thread.id}/runs`,
+    { assistant_id: assistantId },
+    { headers }
+  );
+
+  while (run.status !== 'completed') {
+    await new Promise(r => setTimeout(r, 1000));
+    const chk = await axios.get(
+      `https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`,
+      { headers }
+    );
+    run = chk.data;
+  }
+
+  const { data: msgs } = await axios.get(
+    `https://api.openai.com/v1/threads/${thread.id}/messages`,
+    { headers }
+  );
+  const assistantMsgs = msgs.data.filter(m => m.role === 'assistant');
+  const last = assistantMsgs.pop();
+  return last ? extractMessageText(last.content) : '';
+}
+
+app.post('/webhook', async (req, res) => {
   try {
-    const phone = req.body.phone || req.body.sender?.phone;
-    const message = req.body.message?.trim();
-
-    if (!phone || !message) {
-      console.log("❌ Dados incompletos recebidos:", req.body);
-      return res.sendStatus(400);
+    const { fromMe, text, isStatusReply, phone } = req.body;
+    const mensagem = text?.message?.trim();
+    if (fromMe || isStatusReply || !mensagem) {
+      return res.sendStatus(200);
     }
 
-    console.log(`📩 Mensagem recebida de: ${phone} | Conteúdo: ${message}`);
+    console.log(`← ${phone}: ${mensagem}`);
 
-    // Criar thread no Assistente
-    const thread = await openai.beta.threads.create();
-
-    // Adicionar mensagem do usuário
-    await openai.beta.threads.messages.create(thread.id, {
-      role: "user",
-      content: message,
-    });
-
-    // Executar o Assistente
-    const run = await openai.beta.threads.runs.create(thread.id, {
-      assistant_id: ASSISTANT_ID,
-    });
-
-    // Esperar resposta
-    let status = run.status;
-    while (status !== "completed" && status !== "failed") {
-      await new Promise((r) => setTimeout(r, 1500));
-      const updatedRun = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-      status = updatedRun.status;
+    // Inicializa buffer (apenas em memória)
+    if (!conversations[phone]) {
+      conversations[phone] = [];
     }
 
-    if (status === "failed") {
-      console.error("❌ O assistente falhou ao processar.");
-      return res.sendStatus(500);
+    if (mensagem === '099') {
+      // Mensagem de finalização (não salva mais)
+      await axios.post(
+        zapiUrl,
+        { phone, message: 'Conversa encerrada.' },
+        clientToken ? { headers: { 'Client-Token': clientToken } } : {}
+      );
+
+      delete conversations[phone];
+      return res.sendStatus(200);
     }
 
-    // Pegar resposta
-    const messages = await openai.beta.threads.messages.list(thread.id);
-    const resposta = messages.data.find((msg) => msg.role === "assistant")?.content?.[0]?.text?.value?.trim();
+    // Gera resposta com assistente
+    const resposta = await callAssistant(mensagem);
 
-    if (!resposta) {
-      console.error("❌ Resposta do assistente vazia.");
-      return res.sendStatus(500);
-    }
+    // Salva no buffer
+    conversations[phone].push({ user: mensagem, bot: resposta });
 
-    console.log(`📤 Enviando resposta: ${resposta}`);
-
-    // Enviar via Z-API
+    console.log(`→ ${phone}: ${resposta}`);
     await axios.post(
       zapiUrl,
-      {
-        phone,
-        message: resposta,
-      },
-      {
-        headers: {
-          "Client-Token": ZAPI_CLIENT_TOKEN,
-        },
-      }
+      { phone, message: resposta },
+      clientToken ? { headers: { 'Client-Token': clientToken } } : {}
     );
 
     return res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro ao processar mensagem:", err.response?.data || err.message);
+    console.error('Erro no webhook:', err.message);
     return res.sendStatus(500);
   }
 });
 
-app.listen(PORT, () => {
-  console.log("🤖 Bot rodando com seu assistente personalizado na porta 10000");
-});
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`🚀 Bot rodando na porta ${PORT}`));
